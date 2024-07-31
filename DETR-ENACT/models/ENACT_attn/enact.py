@@ -4,7 +4,7 @@ from torch import nn, Tensor
 
 import numpy as np
 import matplotlib.pyplot as plt
-import ENACT
+#import ENACT
 
 from torch.autograd.function import once_differentiable
 from sklearn.cluster import KMeans
@@ -293,7 +293,7 @@ class ClustAttn(nn.Module):
 
         return gaussian_kernel
 
-
+"""
 class ATTNFunction(torch.autograd.Function):
     @staticmethod
     def forward(ctx, clust_qs, ks, clust_vs, n_heads, n_clusters, device):
@@ -315,7 +315,7 @@ class ATTNFunction(torch.autograd.Function):
         grad_qs, grad_ks, grad_vs = ENACT.backward_mhsa(clust_qs, ks, clust_vs, n_heads, n_clusters, grad_output)
         return grad_qs, grad_ks, grad_vs, None, None, None
 
-"""
+
 class ATTNFunction(torch.autograd.Function):
     @staticmethod
     def forward(ctx, clust_qs, ks, clust_vs, n_heads, end_inds_vals_cumsum, n_clusters_times_heads, q_shapes_cumsum, end_inds_attns, start_inds_attns_cumsum, end_inds_attns_all_pix, start_inds_attns_cumsum_all_pixs, end_inds_vals_all_pix, start_inds_vals_cumsum_all_pixs, gr_sizes, gr_sizes_all_pixs, start_inds_vals_cumsum_all_pixs_all_inds):

@@ -54,6 +54,8 @@ def get_args_parser():
                         help="If true, we replace stride with dilation in the last convolutional block (DC5)")
     parser.add_argument('--num_feature_levels', default=1, type=int, help='number of feature levels')
     # * Transformer
+    parser.add_argument('--smoothing_sigma', default=3., type=float,
+                        help="Standard deviation of the gaussian kernel used for the smoothening of the input")
     parser.add_argument('--enc_layers', default=6, type=int,
                         help="Number of encoding layers in the transformer")
     parser.add_argument('--dec_layers', default=6, type=int,
@@ -108,7 +110,7 @@ def get_args_parser():
     parser.add_argument('--coco_path', default='/data/coco', type=str)
     parser.add_argument('--coco_panoptic_path', type=str)
     parser.add_argument('--remove_difficult', action='store_true')
-    parser.add_argument('--output_dir', default='/data/detr-workdir/r50-dc5',
+    parser.add_argument('--output_dir', default='',
                         help='path where to save, empty for no saving')
     parser.add_argument('--device', default='cuda',
                         help='device to use for training / testing')

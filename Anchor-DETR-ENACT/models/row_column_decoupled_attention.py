@@ -5,7 +5,9 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
 # ------------------------------------------------------------------------
 import warnings
+import numpy as np
 import torch
+import torch.nn as nn
 from torch.nn.functional import  linear,softmax,dropout,pad
 from torch.nn import Linear
 from torch.nn.init import xavier_uniform_
@@ -23,6 +25,71 @@ from torch.nn import grad  # noqa: F401
 from torch._jit_internal import boolean_dispatch, List, Optional, _overload
 
 Tensor = torch.Tensor
+
+class ClustAttn(nn.Module):
+    def __init__(self, sigma, d_model, dropout, n_heads, device):
+        super().__init__()
+
+        self.gaussian_kernel = (1./(sigma*torch.sqrt(torch.Tensor([2*np.pi]))))*torch.exp(-torch.pow(torch.arange(-(3*sigma-1),3*sigma), 2)/(2*torch.pow(torch.Tensor([sigma]),2)))
+        self.Sobel_2der = torch.Tensor([-1., 2., -1.])
+        self.base = torch.Tensor([2])
+
+        self.W_prob = nn.Linear(d_model, 1)
+
+        self._reset_parameters()
+
+        self.n_heads = n_heads
+        self.device = device
+
+    def _reset_parameters(self):
+        for p in self.parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
+    
+    def forward(self, q, k, v, h, w):
+        q = q.permute(1,0,2) # New shape: BS x spatial x feature
+        k = k.permute(1,0,2) # New shape: BS x spatial x feature
+        v = v.permute(1,0,2) # New shape: BS x spatial x feature
+        bs, spat, feats = q.shape
+        prob_q = F.softmax(self.W_prob(q).squeeze(-1), -1) + 1e-8
+
+        entropy = -prob_q*torch.log(prob_q)/torch.log(self.base.to(self.device))
+        entropy = F.conv1d(entropy.unsqueeze(1), self.gaussian_kernel.to(self.device).unsqueeze(0).unsqueeze(0), padding='same').squeeze(1)
+        
+        entropy_step = F.conv1d(entropy.unsqueeze(1), self.Sobel_2der.to(self.device).unsqueeze(0).unsqueeze(0), padding='same').squeeze(1)
+        entropy_step = STEFunction.apply(entropy_step)
+        #print(entropy_step)
+
+        means = []
+        stds = []
+        for b in range(bs):
+            boundaries = torch.diff(entropy_step[b].type(torch.int64), prepend=~entropy_step[b][:1].type(torch.int64), append=~entropy_step[b][-1:].type(torch.int64))
+            region_lengths = torch.diff(torch.nonzero(boundaries).squeeze())
+            mean_region_length = region_lengths.float().mean()
+            std_region_length = region_lengths.float().std()
+            means.append(mean_region_length.item())
+            stds.append(std_region_length.item())
+        
+        clst_sh = round(np.mean(means))
+        q = q[:,(spat%clst_sh)//2:spat-(spat%clst_sh - (spat%clst_sh)//2),:]
+        v = v[:,(spat%clst_sh)//2:spat-(spat%clst_sh - (spat%clst_sh)//2),:]
+        q = q.view(bs, q.shape[1]//clst_sh, clst_sh, feats)
+        v = v.view(bs, v.shape[1]//clst_sh, clst_sh, feats)
+        entropy = entropy[:, (spat%clst_sh)//2:spat-(spat%clst_sh - (spat%clst_sh)//2)]
+        entropy = F.softmax(entropy.view(bs, entropy.shape[1]//clst_sh, clst_sh), -1).unsqueeze(-1)
+        q = (entropy*q).sum(-2)
+        v = (entropy*v).sum(-2)
+
+        return q, v
+
+class STEFunction(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, input):
+        return (input > 0).float()
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        return F.hardtanh(grad_output)
 
 
 def multi_head_rcda_forward(query_row,  # type: Tensor
@@ -163,6 +230,10 @@ def multi_head_rcda_forward(query_row,  # type: Tensor
     if _b is not None:
         _b = _b[_start:]
     v = linear(value, _w, _b)
+
+    print(q_row.shape)
+    print(q_col.shape)
+    print(v.shape)
 
     q_row = q_row.transpose(0, 1)
     q_col = q_col.transpose(0, 1)
