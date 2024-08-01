@@ -17,7 +17,7 @@ from torch import nn, Tensor
 
 from util.misc import inverse_sigmoid
 
-
+from .enact import ClustAttn
 from models.row_column_decoupled_attention import MultiheadRCDA
 
 class Transformer(nn.Module):
@@ -180,7 +180,8 @@ class TransformerEncoderLayerSpatial(nn.Module):
             raise ValueError(f'unknown {attention_type} attention_type')
 
         # self attention
-        self.self_attn = attention_module(d_model, n_heads, sigma, device, dropout=dropout)
+        self.ENACT = ClustAttn(sigma, d_model, device)
+        self.self_attn = attention_module(d_model, n_heads, dropout=dropout)
         self.dropout1 = nn.Dropout(dropout)
         self.norm1 = nn.LayerNorm(d_model)
 
@@ -199,9 +200,17 @@ class TransformerEncoderLayerSpatial(nn.Module):
         if self.attention_type=="RCDA":
             posemb_row = posemb_row.unsqueeze(1).repeat(1, h, 1, 1)
             posemb_col = posemb_col.unsqueeze(2).repeat(1, 1, w, 1)
-            src2 = self.self_attn((src + posemb_row).reshape(bz, h * w, c), (src + posemb_col).reshape(bz, h * w, c),
+            q_row_cl, q_col_cl, v = self.ENACT((src + posemb_row).reshape(bz, h * w, c), (src + posemb_col).reshape(bz, h * w, c), src)
+            #print("-----/////-----")
+            #print(bz, h * w, c)
+            #print(q_row_cl.shape, entropy_row.shape)
+            #q_col_cl, entropy_col = self.ENACT((src + posemb_col).reshape(bz, h * w, c))
+            #print(q_col_cl.shape, entropy_col.shape)
+            #means = (~torch.logical_xor(entropy_row, entropy_col)).type(torch.float64)
+            #print(means.mean(-1))
+            src2 = self.self_attn(q_row_cl, q_col_cl,
                                   src + posemb_row, src + posemb_col,
-                                  src, key_padding_mask=padding_mask)[0].transpose(0, 1).reshape(bz, h, w, c)
+                                  v, 'enc', key_padding_mask=padding_mask)[0].transpose(0, 1).reshape(bz, h, w, c)
         else:
             src2 = self.self_attn((src + posemb_2d).reshape(bz, h * w, c).transpose(0, 1),
                                   (src + posemb_2d).reshape(bz, h * w, c).transpose(0, 1),
@@ -313,7 +322,7 @@ class TransformerDecoderLayer(nn.Module):
             k_row = src_row + posemb_row
             k_col = src_col + posemb_col
             tgt2 = self.cross_attn((tgt + query_pos_x).repeat(l, 1, 1), (tgt + query_pos_y).repeat(l, 1, 1), k_row, k_col,
-                                   srcs, key_padding_mask=src_padding_masks)[0].transpose(0, 1)
+                                   srcs, 'dec', key_padding_mask=src_padding_masks)[0].transpose(0, 1)
         else:
             tgt2 = self.cross_attn((tgt + query_pos).repeat(l, 1, 1).transpose(0, 1),
                                    (srcs + posemb_2d).reshape(bz * l, h * w, c).transpose(0,1),
