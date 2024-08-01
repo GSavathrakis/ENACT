@@ -1,26 +1,9 @@
 import torch
 import torch.nn.functional as F
-from torch import nn, Tensor
+from torch import nn
 
 import numpy as np
 import matplotlib.pyplot as plt
-#import ENACT
-
-from torch.autograd.function import once_differentiable
-from sklearn.cluster import KMeans
-
-def kmeans(input, n_centroids):
-    input_cpu = input.cpu().detach().numpy()
-    bs, spat, ft = input_cpu.shape
-    input_flatt = input_cpu.reshape(-1, ft)
-    kmns = KMeans(n_clusters=n_centroids)
-    kmns.fit(input_flatt)
-    outp, inv_inds, cnt = np.unique(kmns.labels_, return_inverse=True, return_counts=True)
-    clust_ids = cnt[inv_inds].reshape(bs, spat)
-    prob_dist = clust_ids/spat
-
-    return prob_dist
-
 
 
 class ClustAttn(nn.Module):
@@ -163,99 +146,6 @@ class ClustAttn(nn.Module):
         attention = self.W_o(attention.flatten(2,3))
         """
         return attention
-
-
-
-
-
-
-        """
-        entropy_step[:,-1][entropy_step[:,-1]==entropy_step[:,-2]] = (~entropy_step[:,-1][entropy_step[:,-1]==entropy_step[:,-2]].type(torch.bool)).type(entropy_step.dtype)
-        
-        indices = torch.nonzero((entropy_step[:, 1:] != entropy_step[:, :-1]), as_tuple=False)
-        indices[:, 1] += 1
-
-        A = torch.zeros(indices.shape[0], spat).to(device)
-        A[torch.arange(0,indices.shape[0]), indices[:,1]] = indices[:,0]+1.
-        A = A[1:]+A[:-1]
-        A[torch.sum(A, dim=-1)%2!=0] = A[torch.sum(A, dim=-1)%2!=0]//A[torch.sum(A, dim=-1)%2!=0].max(dim=-1).values.view(-1,1)*A[torch.sum(A, dim=-1)%2!=0].max(dim=-1).values.view(-1,1) \
-                                    + torch.cat((A[torch.sum(A, dim=-1)%2!=0].max(dim=-1).values.view(-1,1),torch.zeros(A[torch.sum(A, dim=-1)%2!=0].max(dim=-1).values.shape[0],spat-1).to(device)),dim=1)
-        A = torch.cat((A[0].view(1,-1), A), dim=0)
-        A[0][torch.where(A[0]==1)[0][-1]] = 0
-        A[0,0] = 1
-
-        clust_sizes = torch.cat((torch.nonzero(A[:,0]).squeeze(), torch.tensor(A[:,0].shape[0]).view(1,).to(device)),dim=0)[1:] - torch.cat((torch.nonzero(A[:,0]).squeeze(), torch.tensor(A[:,0].shape[0]).view(1,).to(device)),dim=0)[:-1]
-        
-        A = torch.where(A != 0, 1, 0)
-        A = torch.cumsum(A, dim=1)
-        A = ((A == 1) | (A == 3)).type(torch.float)
-        A[torch.cumsum(clust_sizes, dim=0)-1,-1]=1
-
-        sz = entropy.size(0)
-        entropy = self.non_zero_softmax(A*entropy[torch.repeat_interleave(torch.arange(sz).to(device), clust_sizes)]).unsqueeze(-1)
-        qs = torch.split(torch.sum(entropy*q[torch.repeat_interleave(torch.arange(sz).to(device), clust_sizes)], dim=1), clust_sizes.tolist())
-        vs = torch.split(torch.sum(entropy*v[torch.repeat_interleave(torch.arange(sz).to(device), clust_sizes)], dim=1), clust_sizes.tolist())
-
-        pad = torch.split(torch.zeros(torch.sum(-1*clust_sizes+clust_sizes.max(dim=-1).values), feats).to(device), (-1*clust_sizes+clust_sizes.max(dim=-1).values).tolist())
-        qs = torch.cat(list(map(lambda tensors: torch.cat(tensors, dim=0).unsqueeze(0), zip(qs, pad))), dim=0).permute(1,0,2)
-        vs = torch.cat(list(map(lambda tensors: torch.cat(tensors, dim=0).unsqueeze(0), zip(vs, pad))), dim=0).permute(1,0,2)
-
-
-        
-        clust_sizes=[]
-        qs=[]
-        vs=[]
-        for n in range(bs):
-            curr_ind = torch.arange(0, spat-1).to(device)[(entropy_step[n,1:] != entropy_step[n,:-1])]
-            if len(curr_ind) > 0:
-                curr_ind = torch.cat((torch.tensor([0]).to(device), curr_ind + 1))
-            
-            
-            if (curr_ind.shape[0]==0):
-                break
-            
-            mask = torch.zeros(curr_ind.shape[0], spat).to(device)
-            region_masks = torch.zeros_like(mask, dtype=torch.bool)
-            region_masks[torch.arange(mask.size(0)), curr_ind] = True
-
-            Ones = torch.ones(curr_ind.shape[0], spat).to(device)
-            mask[region_masks] = Ones[region_masks]
-
-            mask_start = (torch.cumsum(mask[1:] + mask[:-1], dim=1) == 1)
-            mask_end = (torch.cumsum(mask[1:] + mask[:-1], dim=1) == 3)
-
-            result = (mask_start | mask_end).type(torch.float)
-            result[-1,-1]=1
-            entropy_curr = result*entropy[n].unsqueeze(0).repeat(curr_ind.shape[0]-1, 1)
-            qs.append(torch.sum(self.non_zero_softmax(entropy_curr).unsqueeze(-1)*q[n], dim=1))
-            vs.append(torch.sum(self.non_zero_softmax(entropy_curr).unsqueeze(-1)*v[n], dim=1))
-            clust_sizes.append(entropy_curr.shape[0])
-            
-        max_cl_size = max(clust_sizes)
-        for n in range(bs):
-            pad = torch.zeros(max_cl_size-qs[n].shape[0],qs[n].shape[1]).to(device)
-            qs[n] = torch.cat((qs[n], pad),dim=0).unsqueeze(0)
-            vs[n] = torch.cat((vs[n], pad),dim=0).unsqueeze(0)
-            clust_qs, ks, clust_vs, n_heads, sizes, indices
-        qs = torch.cat(qs, dim=0).permute(1,0,2)
-        vs = torch.cat(vs, dim=0).permute(1,0,2)
-        
-        return qs, vs, clust_sizes
-        
-        if (curr_ind.shape[0]!=0):
-            max_cl_size = max(clust_sizes)
-            for n in range(bs):
-                pad = torch.zeros(max_cl_size-qs[n].shape[0],qs[n].shape[1]).to(device)
-                qs[n] = torch.cat((qs[n], pad),dim=0).unsqueeze(0)
-                vs[n] = torch.cat((vs[n], pad),dim=0).unsqueeze(0)
-            
-            qs = torch.cat(qs, dim=0).permute(1,0,2)
-            vs = torch.cat(vs, dim=0).permute(1,0,2)
-        
-            return qs, vs, True, clust_sizes
-        else:
-            return q.permute(1,0,2), v.permute(1,0,2), False, None
-        """
         
     @staticmethod
     def plot_entropy(entropy, dims):
@@ -293,77 +183,6 @@ class ClustAttn(nn.Module):
 
         return gaussian_kernel
 
-"""
-class ATTNFunction(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, clust_qs, ks, clust_vs, n_heads, n_clusters, device):
-        output = ENACT.forward_mhsa(clust_qs, ks, clust_vs, n_heads, n_clusters)
-        #output = output.to(device)
-        ctx.n_heads = n_heads
-        ctx.n_clusters = n_clusters
-        ctx.device = device
-        ctx.save_for_backward(clust_qs, ks, clust_vs)
-        return output
-    
-    @staticmethod
-    @once_differentiable
-    def backward(ctx, grad_output):
-        clust_qs, ks, clust_vs = ctx.saved_tensors
-        n_heads = ctx.n_heads
-        n_clusters = ctx.n_clusters
-        device = ctx.device
-        grad_qs, grad_ks, grad_vs = ENACT.backward_mhsa(clust_qs, ks, clust_vs, n_heads, n_clusters, grad_output)
-        return grad_qs, grad_ks, grad_vs, None, None, None
-
-
-class ATTNFunction(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, clust_qs, ks, clust_vs, n_heads, end_inds_vals_cumsum, n_clusters_times_heads, q_shapes_cumsum, end_inds_attns, start_inds_attns_cumsum, end_inds_attns_all_pix, start_inds_attns_cumsum_all_pixs, end_inds_vals_all_pix, start_inds_vals_cumsum_all_pixs, gr_sizes, gr_sizes_all_pixs, start_inds_vals_cumsum_all_pixs_all_inds):
-        
-        ctx.n_heads = n_heads
-        ctx.end_inds_vals_cumsum = end_inds_vals_cumsum
-        ctx.n_clusters_times_heads = n_clusters_times_heads
-        ctx.q_shapes_cumsum = q_shapes_cumsum
-        ctx.end_inds_attns = end_inds_attns
-        ctx.start_inds_attns_cumsum = start_inds_attns_cumsum
-        ctx.end_inds_attns_all_pix = end_inds_attns_all_pix
-        ctx.start_inds_attns_cumsum_all_pixs = start_inds_attns_cumsum_all_pixs
-        ctx.end_inds_vals_all_pix = end_inds_vals_all_pix
-        ctx.start_inds_vals_cumsum_all_pixs = start_inds_vals_cumsum_all_pixs
-        ctx.gr_sizes = gr_sizes
-        ctx.gr_sizes_all_pixs = gr_sizes_all_pixs
-        ctx.start_inds_vals_cumsum_all_pixs_all_inds = start_inds_vals_cumsum_all_pixs_all_inds
-        print("start")
-        
-
-        output, attn_w = ENACT.forward_mhsa(clust_qs, ks, clust_vs, n_heads, end_inds_vals_cumsum, n_clusters_times_heads, q_shapes_cumsum, end_inds_attns, start_inds_attns_cumsum, end_inds_attns_all_pix, start_inds_attns_cumsum_all_pixs, end_inds_vals_all_pix, start_inds_vals_cumsum_all_pixs, gr_sizes)
-        print("end")
-        ctx.save_for_backward(clust_qs, ks, clust_vs, attn_w)
-        #output = ENACT.forward_mhsa(clust_qs, ks, clust_vs, n_heads, )
-        #ctx.save_for_backward(clust_qs, ks, clust_vs)
-        return output
-    
-    @staticmethod
-    @once_differentiable
-    def backward(ctx, grad_output):
-        clust_qs, ks, clust_vs, attn_w = ctx.saved_tensors
-        n_heads = ctx.n_heads
-        n_clusters_times_heads = ctx.n_clusters_times_heads
-        end_inds_vals_cumsum = ctx.end_inds_vals_cumsum
-        q_shapes_cumsum = ctx.q_shapes_cumsum
-        end_inds_attns = ctx.end_inds_attns
-        start_inds_attns_cumsum = ctx.start_inds_attns_cumsum
-        end_inds_attns_all_pix = ctx.end_inds_attns_all_pix
-        start_inds_attns_cumsum_all_pixs = ctx.start_inds_attns_cumsum_all_pixs
-        end_inds_vals_all_pix = ctx.end_inds_vals_all_pix
-        start_inds_vals_cumsum_all_pixs = ctx.start_inds_vals_cumsum_all_pixs
-        gr_sizes = ctx.gr_sizes
-        gr_sizes_all_pixs = ctx.gr_sizes_all_pixs
-        start_inds_vals_cumsum_all_pixs_all_inds = ctx.start_inds_vals_cumsum_all_pixs_all_inds
-
-        grad_qs, grad_ks, grad_vs = ENACT.backward_mhsa(grad_output, attn_w, clust_vs, ks, clust_qs, start_inds_vals_cumsum_all_pixs_all_inds, end_inds_attns_all_pix, gr_sizes_all_pixs, clust_qs.shape[1], end_inds_vals_cumsum, n_clusters_times_heads, q_shapes_cumsum, start_inds_attns_cumsum_all_pixs, gr_sizes_all_pixs, end_inds_vals_all_pix, start_inds_vals_cumsum_all_pixs)
-        return grad_qs, grad_ks, grad_vs, None, None, None, None, None, None, None, None, None, None, None
-"""
 class STEFunction(torch.autograd.Function):
     @staticmethod
     def forward(ctx, input):

@@ -231,10 +231,6 @@ def multi_head_rcda_forward(query_row,  # type: Tensor
         _b = _b[_start:]
     v = linear(value, _w, _b)
 
-    print(q_row.shape)
-    print(q_col.shape)
-    print(v.shape)
-
     q_row = q_row.transpose(0, 1)
     q_col = q_col.transpose(0, 1)
     k_row = k_row.mean(1).transpose(0, 1)
@@ -254,6 +250,12 @@ def multi_head_rcda_forward(query_row,  # type: Tensor
     if v is not None:
         v = v.contiguous().permute(1,2,0,3).reshape(src_len_col,src_len_row, bsz*num_heads, head_dim).permute(2,0,1,3)
 
+    print("-----/////-----")
+    print(q_row.shape)
+    print(q_col.shape)
+    print(k_row.shape)
+    print(k_col.shape)
+    print(v.shape)
 
     attn_output_weights_row = torch.bmm(q_row, k_row.transpose(1, 2))
     attn_output_weights_col = torch.bmm(q_col, k_col.transpose(1, 2))
@@ -354,12 +356,13 @@ class MultiheadRCDA(Module):
     }
     __constants__ = ['q_row_proj_weight', 'q_col_proj_weight', 'k_row_proj_weight', 'k_col_proj_weight', 'v_proj_weight', 'in_proj_weight']
 
-    def __init__(self, embed_dim, num_heads, dropout=0., bias=True, add_bias_kv=False, add_zero_attn=False, kdim=None, vdim=None):
+    def __init__(self, embed_dim, num_heads, sigma, device, dropout=0., bias=True, add_bias_kv=False, add_zero_attn=False, kdim=None, vdim=None):
         super(MultiheadRCDA, self).__init__()
         self.embed_dim = embed_dim
         self.kdim = kdim if kdim is not None else embed_dim
         self.vdim = vdim if vdim is not None else embed_dim
         self._qkv_same_embed_dim = self.kdim == embed_dim and self.vdim == embed_dim
+        self.ENACT = ClustAttn(sigma, embed_dim, dropout, num_heads, device)
 
         self.num_heads = num_heads
         self.dropout = dropout

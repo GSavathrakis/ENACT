@@ -21,7 +21,7 @@ from util.misc import inverse_sigmoid
 from models.row_column_decoupled_attention import MultiheadRCDA
 
 class Transformer(nn.Module):
-    def __init__(self, d_model=256, nhead=8,
+    def __init__(self, sigma, device, d_model=256, nhead=8,
                  num_encoder_layers=6, num_decoder_layers=6, dim_feedforward=1024, dropout=0.,
                  activation="relu", num_feature_levels=3,num_query_position = 300,num_query_pattern=3,
                  spatial_prior="learned",attention_type="RCDA"):
@@ -31,7 +31,7 @@ class Transformer(nn.Module):
         self.nhead = nhead
 
         self.attention_type = attention_type
-        encoder_layer = TransformerEncoderLayerSpatial(d_model, dim_feedforward,
+        encoder_layer = TransformerEncoderLayerSpatial(sigma, device, d_model, dim_feedforward,
                                                           dropout, activation, nhead , attention_type)
         encoder_layer_level = TransformerEncoderLayerLevel(d_model, dim_feedforward,
                                                           dropout, activation, nhead)
@@ -165,7 +165,7 @@ class Transformer(nn.Module):
 
 
 class TransformerEncoderLayerSpatial(nn.Module):
-    def __init__(self,
+    def __init__(self, sigma, device,
                  d_model=256, d_ffn=1024,
                  dropout=0., activation="relu",
                  n_heads=8, attention_type="RCDA"):
@@ -180,7 +180,7 @@ class TransformerEncoderLayerSpatial(nn.Module):
             raise ValueError(f'unknown {attention_type} attention_type')
 
         # self attention
-        self.self_attn = attention_module(d_model, n_heads, dropout=dropout)
+        self.self_attn = attention_module(d_model, n_heads, sigma, device, dropout=dropout)
         self.dropout1 = nn.Dropout(dropout)
         self.norm1 = nn.LayerNorm(d_model)
 
@@ -380,6 +380,8 @@ def _get_activation_fn(activation):
 
 def build_transformer(args):
     return Transformer(
+        sigma = args.smoothing_sigma,
+        device = args.device,
         d_model=args.hidden_dim,
         nhead=args.nheads,
         num_encoder_layers=args.enc_layers,
