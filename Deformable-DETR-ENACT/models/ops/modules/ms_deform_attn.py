@@ -89,6 +89,10 @@ class MSDeformAttn(nn.Module):
         """
         N, Len_q, _ = query.shape
         N, Len_in, _ = input_flatten.shape
+        print(input_spatial_shapes[:, 0])
+        print(input_spatial_shapes[:, 1])
+        print(input_spatial_shapes[:, 0] * input_spatial_shapes[:, 1])
+        print(Len_in)
         assert (input_spatial_shapes[:, 0] * input_spatial_shapes[:, 1]).sum() == Len_in
 
         value = self.value_proj(input_flatten)
