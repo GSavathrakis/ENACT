@@ -15,15 +15,9 @@ class ClustAttn(nn.Module):
         self.base = torch.Tensor([2])
         
         self.W_q = nn.Linear(d_model, d_model)
-        #self.dropout_q = nn.Dropout(dropout)
         self.W_k = nn.Linear(d_model, d_model)
-        #self.dropout_k = nn.Dropout(dropout)
         self.W_v = nn.Linear(d_model, d_model)
-        #self.dropout_v = nn.Dropout(dropout)
         self.W_o = nn.Linear(d_model, d_model)
-        #self.dropout_o = nn.Dropout(dropout)
-
-        #self.attn = nn.MultiheadAttention(d_model, n_heads)
 
         self.W_prob = nn.Linear(d_model, 1)
 
@@ -41,10 +35,10 @@ class ClustAttn(nn.Module):
         q = q.permute(1,0,2) # New shape: BS x spatial x feature
         k = k.permute(1,0,2) # New shape: BS x spatial x feature
         v = v.permute(1,0,2) # New shape: BS x spatial x feature
-        bs, spat, feats = q.shape
-        prob_q = F.softmax(self.W_prob(q).squeeze(-1), -1) + 1e-8
+        bs, spat, feats = k.shape
+        prob_k = F.softmax(self.W_prob(k).squeeze(-1), -1) + 1e-8
 
-        entropy = -prob_q*torch.log(prob_q)/torch.log(self.base.to(self.device))
+        entropy = -prob_k*torch.log(prob_k)/torch.log(self.base.to(self.device))
         entropy = F.conv1d(entropy.unsqueeze(1), self.gaussian_kernel.to(self.device).unsqueeze(0).unsqueeze(0), padding='same').squeeze(1)
         
         entropy_step = F.conv1d(entropy.unsqueeze(1), self.Sobel_2der.to(self.device).unsqueeze(0).unsqueeze(0), padding='same').squeeze(1)
@@ -62,20 +56,20 @@ class ClustAttn(nn.Module):
             stds.append(std_region_length.item())
         
         clst_sh = round(np.mean(means))
-        q = q[:,(spat%clst_sh)//2:spat-(spat%clst_sh - (spat%clst_sh)//2),:]
+        k = k[:,(spat%clst_sh)//2:spat-(spat%clst_sh - (spat%clst_sh)//2),:]
         v = v[:,(spat%clst_sh)//2:spat-(spat%clst_sh - (spat%clst_sh)//2),:]
-        q = q.view(bs, q.shape[1]//clst_sh, clst_sh, feats)
+        k = k.view(bs, k.shape[1]//clst_sh, clst_sh, feats)
         v = v.view(bs, v.shape[1]//clst_sh, clst_sh, feats)
         entropy = entropy[:, (spat%clst_sh)//2:spat-(spat%clst_sh - (spat%clst_sh)//2)]
         entropy = F.softmax(entropy.view(bs, entropy.shape[1]//clst_sh, clst_sh), -1).unsqueeze(-1)
-        q = (entropy*q).sum(-2)
+        k = (entropy*k).sum(-2)
         v = (entropy*v).sum(-2)
 
-        q = self.W_q(q).view(bs, q.shape[1], self.n_heads, feats//self.n_heads).permute(2,0,1,3)
-        k = self.W_k(k).view(bs, spat, self.n_heads, feats//self.n_heads).permute(2,0,1,3)
+        k = self.W_k(k).view(bs, k.shape[1], self.n_heads, feats//self.n_heads).permute(2,0,1,3)
+        q = self.W_q(q).view(bs, spat, self.n_heads, feats//self.n_heads).permute(2,0,1,3)
         v = self.W_v(v).view(bs, v.shape[1], self.n_heads, feats//self.n_heads).permute(2,0,1,3)
 
-        attention = self.W_o(torch.matmul(F.softmax(torch.matmul(k, q.transpose(2,3)), -1)/(feats//self.n_heads), v).permute(1,2,0,3).flatten(2,3)).permute(1,0,2)
+        attention = self.W_o(torch.matmul(F.softmax(torch.matmul(q, k.transpose(2,3)), -1)/(feats//self.n_heads), v).permute(1,2,0,3).flatten(2,3)).permute(1,0,2)
 
 
 
