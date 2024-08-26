@@ -39,11 +39,11 @@ class ClustAttn(nn.Module):
         prob_k = F.softmax(self.W_prob(k).squeeze(-1), -1) + 1e-8
 
         entropy = -prob_k*torch.log(prob_k)/torch.log(self.base.to(self.device))
+        #self.plot_entropy(entropy=entropy[5].view(h,w), dims=2, img_id=5)
         entropy = F.conv1d(entropy.unsqueeze(1), self.gaussian_kernel.to(self.device).unsqueeze(0).unsqueeze(0), padding='same').squeeze(1)
         
         entropy_step = F.conv1d(entropy.unsqueeze(1), self.Sobel_2der.to(self.device).unsqueeze(0).unsqueeze(0), padding='same').squeeze(1)
         entropy_step = STEFunction.apply(entropy_step)
-        #print(entropy_step)
 
         means = []
         stds = []
@@ -74,7 +74,7 @@ class ClustAttn(nn.Module):
         return attention
         
     @staticmethod
-    def plot_entropy(entropy, dims):
+    def plot_entropy(entropy, dims, img_id):
         if dims==1:
             spat = entropy.shape[0]
             plt.figure()
@@ -84,9 +84,9 @@ class ClustAttn(nn.Module):
             plt.show()
         elif dims==2:
             plt.figure()
-            plt.imshow(entropy[0].cpu().detach().numpy(), cmap='viridis')
-            plt.colorbar()
-            plt.show()
+            plt.imshow(torch.log(entropy).cpu().detach().numpy()/torch.log(torch.Tensor([10])), cmap='gray')
+            plt.axis('off')
+            plt.savefig(f"entropy_{img_id}.jpg")
         else:
             print('Dimensions of entropy must be either 1d or 2d')
 

@@ -11,9 +11,11 @@
 Train and eval functions used in main.py
 """
 import math
+import copy
 import os
 import sys
 from typing import Iterable
+import matplotlib.pyplot as plt
 
 import torch
 
@@ -93,9 +95,11 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
             output_dir=os.path.join(output_dir, "panoptic_eval"),
         )
 
-    for samples, targets in metric_logger.log_every(data_loader, 10, header):
+    for samples, targets in metric_logger.log_every(data_loader, 100, header):
         samples = samples.to(device)
         targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
+
+        #plot_image(samples.tensors[5], 5)
 
         outputs = model(samples)
         loss_dict = criterion(outputs, targets)
@@ -157,3 +161,17 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
         stats['PQ_th'] = panoptic_res["Things"]
         stats['PQ_st'] = panoptic_res["Stuff"]
     return stats, coco_evaluator
+
+
+def plot_image(img, id):
+    img_to_show = copy.deepcopy(img)
+    min_along_dim2 = torch.min(img_to_show, dim=2).values
+    min_values = torch.min(min_along_dim2, dim=1).values
+    img_to_show = img_to_show - min_values.unsqueeze(-1).unsqueeze(-1).repeat(1,img_to_show.shape[1],img_to_show.shape[2])
+    max_along_dim2 = torch.max(img_to_show, dim=2).values
+    max_values = torch.max(max_along_dim2, dim=1).values
+    img_to_show = ((img_to_show/max_values.unsqueeze(-1).unsqueeze(-1).repeat(1,img_to_show.shape[1],img_to_show.shape[2]))*255).type(torch.int64)
+    plt.figure()
+    plt.imshow(img_to_show.permute(1,2,0).cpu().detach().numpy())
+    plt.axis("off")
+    plt.savefig(f"sample_image_{id}.jpg")
