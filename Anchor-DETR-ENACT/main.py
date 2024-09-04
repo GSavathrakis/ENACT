@@ -28,7 +28,7 @@ from models import build_model
 
 def get_args_parser():
     parser = argparse.ArgumentParser('AnchorDETR Detector', add_help=False)
-    parser.add_argument('--lr', default=1e-4, type=float)
+    parser.add_argument('--lr', default=5e-5, type=float)
     parser.add_argument('--lr_backbone_names', default=["backbone"], type=str, nargs='+')
     parser.add_argument('--lr_backbone', default=1e-5, type=float)
     parser.add_argument('--lr_linear_proj_names', default=[], type=str, nargs='+')
@@ -54,7 +54,7 @@ def get_args_parser():
                         help="If true, we replace stride with dilation in the last convolutional block (DC5)")
     parser.add_argument('--num_feature_levels', default=1, type=int, help='number of feature levels')
     # * Transformer
-    parser.add_argument('--smoothing_sigma', default=3., type=float,
+    parser.add_argument('--smoothing_sigma', default=5., type=float,
                         help="Standard deviation of the gaussian kernel used for the smoothening of the input")
     parser.add_argument('--enc_layers', default=6, type=int,
                         help="Number of encoding layers in the transformer")

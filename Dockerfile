@@ -13,4 +13,3 @@ RUN  apt-get update \
 RUN ln -s /usr/bin/python3 /usr/bin/python
 
 RUN pip install torch==2.0.0 torchvision cython scipy pycocotools tqdm numpy==1.23 opencv-python torch_geometric
-RUN pip install mmcv-full -f https://download.openmmlab.com/mmcv/dist/cu117/torch2.0.0/index.html

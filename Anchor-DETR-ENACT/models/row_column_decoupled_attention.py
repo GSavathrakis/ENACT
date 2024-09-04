@@ -245,10 +245,10 @@ def multi_head_rcda_forward_dec(query_row,  # type: Tensor
     else:
         return attn_output, None
 
-def multi_head_rcda_forward_enc(query_row,  # type: Tensor
-                            query_col,  # type: Tensor
-                            key_row,  # type: Tensor
+def multi_head_rcda_forward_enc(key_row,  # type: Tensor
                             key_col,  # type: Tensor
+                            query_row,  # type: Tensor
+                            query_col,  # type: Tensor
                             value,  # type: Tensor
                             embed_dim_to_check,  # type: int
                             num_heads,  # type: int
@@ -326,9 +326,9 @@ def multi_head_rcda_forward_enc(query_row,  # type: Tensor
           L is the target sequence length, HW is the source sequence length.
     """
 
-    bsz, tgt_len, embed_dim = query_row.size()
-    src_len_row = key_row.size()[2]
-    src_len_col = key_col.size()[1]
+    bsz, tgt_len, embed_dim = key_row.size()
+    src_len_row = query_row.size()[2]
+    src_len_col = query_col.size()[1]
 
 
     assert embed_dim == embed_dim_to_check
@@ -346,7 +346,7 @@ def multi_head_rcda_forward_enc(query_row,  # type: Tensor
     _w = in_proj_weight[_start:_end, :]
     if _b is not None:
         _b = _b[_start:_end]
-    q_row = linear(query_row, _w, _b)
+    k_row = linear(key_row, _w, _b)
 
     # This is inline in_proj function with in_proj_weight and in_proj_bias
     _b = in_proj_bias
@@ -355,7 +355,7 @@ def multi_head_rcda_forward_enc(query_row,  # type: Tensor
     _w = in_proj_weight[_start:_end, :]
     if _b is not None:
         _b = _b[_start:_end]
-    q_col = linear(query_col, _w, _b)
+    k_col = linear(key_col, _w, _b)
 
     # This is inline in_proj function with in_proj_weight and in_proj_bias
     _b = in_proj_bias
@@ -364,7 +364,7 @@ def multi_head_rcda_forward_enc(query_row,  # type: Tensor
     _w = in_proj_weight[_start:_end, :]
     if _b is not None:
         _b = _b[_start:_end]
-    k_row = linear(key_row, _w, _b)
+    q_row = linear(query_row, _w, _b)
 
     # This is inline in_proj function with in_proj_weight and in_proj_bias
     _b = in_proj_bias
@@ -373,7 +373,7 @@ def multi_head_rcda_forward_enc(query_row,  # type: Tensor
     _w = in_proj_weight[_start:_end, :]
     if _b is not None:
         _b = _b[_start:_end]
-    k_col = linear(key_col, _w, _b)
+    q_col = linear(query_col, _w, _b)
 
     # This is inline in_proj function with in_proj_weight and in_proj_bias
     _b = in_proj_bias
@@ -384,28 +384,28 @@ def multi_head_rcda_forward_enc(query_row,  # type: Tensor
         _b = _b[_start:]
     v = linear(value, _w, _b)
 
-    q_row = q_row.transpose(0, 1)
-    q_col = q_col.transpose(0, 1)
-    k_row = k_row.mean(1).transpose(0, 1)
-    k_col = k_col.mean(2).transpose(0, 1)
+    k_row = k_row.transpose(0, 1)
+    k_col = k_col.transpose(0, 1)
+    q_row = q_row.mean(1).transpose(0, 1)
+    q_col = q_col.mean(2).transpose(0, 1)
 
-    q_row = q_row * scaling
-    q_col = q_col * scaling
+    k_row = k_row * scaling
+    k_col = k_col * scaling
 
 
-    q_row = q_row.contiguous().view(tgt_len, bsz * num_heads, head_dim).transpose(0, 1)
-    q_col = q_col.contiguous().view(tgt_len, bsz * num_heads, head_dim).transpose(0, 1)
+    k_row = k_row.contiguous().view(tgt_len, bsz * num_heads, head_dim).transpose(0, 1)
+    k_col = k_col.contiguous().view(tgt_len, bsz * num_heads, head_dim).transpose(0, 1)
 
     if k_row is not None:
-        k_row = k_row.contiguous().view(-1, bsz * num_heads, head_dim).transpose(0, 1)
+        q_row = q_row.contiguous().view(-1, bsz * num_heads, head_dim).transpose(0, 1)
     if k_col is not None:
-        k_col = k_col.contiguous().view(-1, bsz * num_heads, head_dim).transpose(0, 1)
+        q_col = q_col.contiguous().view(-1, bsz * num_heads, head_dim).transpose(0, 1)
     if v is not None:
         v = v.contiguous().permute(1,0,2).reshape(tgt_len, bsz*num_heads, head_dim).permute(1,0,2)
 
 
-    attn_output_weights_row = torch.bmm(k_row, q_row.transpose(1, 2))
-    attn_output_weights_col = torch.bmm(k_col, q_col.transpose(1, 2))
+    attn_output_weights_row = torch.bmm(q_row, k_row.transpose(1, 2))
+    attn_output_weights_col = torch.bmm(q_col, k_col.transpose(1, 2))
     assert list(attn_output_weights_row.size()) == [bsz * num_heads, src_len_row, tgt_len]
     assert list(attn_output_weights_col.size()) == [bsz * num_heads, src_len_col, tgt_len]
 

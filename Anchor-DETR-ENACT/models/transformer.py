@@ -200,7 +200,7 @@ class TransformerEncoderLayerSpatial(nn.Module):
         if self.attention_type=="RCDA":
             posemb_row = posemb_row.unsqueeze(1).repeat(1, h, 1, 1)
             posemb_col = posemb_col.unsqueeze(2).repeat(1, 1, w, 1)
-            q_row_cl, q_col_cl, v = self.ENACT((src + posemb_row).reshape(bz, h * w, c), (src + posemb_col).reshape(bz, h * w, c), src)
+            k_row_cl, k_col_cl, v = self.ENACT((src + posemb_row).reshape(bz, h * w, c), (src + posemb_col).reshape(bz, h * w, c), src)
             #print("-----/////-----")
             #print(bz, h * w, c)
             #print(q_row_cl.shape, entropy_row.shape)
@@ -208,7 +208,7 @@ class TransformerEncoderLayerSpatial(nn.Module):
             #print(q_col_cl.shape, entropy_col.shape)
             #means = (~torch.logical_xor(entropy_row, entropy_col)).type(torch.float64)
             #print(means.mean(-1))
-            src2 = self.self_attn(q_row_cl, q_col_cl,
+            src2 = self.self_attn(k_row_cl, k_col_cl,
                                   src + posemb_row, src + posemb_col,
                                   v, 'enc', key_padding_mask=padding_mask)[0].transpose(0, 1).reshape(bz, h, w, c)
         else:
