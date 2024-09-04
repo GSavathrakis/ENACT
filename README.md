@@ -72,3 +72,10 @@ In this repository, we plug ENACT to three such models, which are the [DETR](htt
     </tr>
   </tbody>
 </table>
+
+## Instructions
+Initially, clone the repository.
+```
+git clone https://github.com/GSavathrakis/ENACT.git
+cd ENACT
+```
