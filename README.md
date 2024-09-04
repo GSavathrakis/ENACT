@@ -9,7 +9,7 @@ In this repository, we plug ENACT to three such models, which are the [DETR](htt
       <th>model</th>
       <th>backbone</th>
       <th>epochs</th>
-      <th>batch size</th>
+      <th>batch</th>
       <th>GPU (GB)</th>
       <th>train time</th>
       <th>inf time</th>
