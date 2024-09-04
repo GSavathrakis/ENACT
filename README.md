@@ -9,6 +9,7 @@ In this repository, we plug ENACT to three such models, which are the [DETR](htt
       <th>model</th>
       <th>backbone</th>
       <th>epochs</th>
+      <th>batch size</th>
       <th>GPU (GB)</th>
       <th>train time</th>
       <th>inf time</th>
@@ -19,6 +20,7 @@ In this repository, we plug ENACT to three such models, which are the [DETR](htt
       <td>DETR-C5</td>
       <td>R50</td>
       <td>300</td>
+      <td>8</td>
       <td>36.5</td>
       <td>0.0541</td>
       <td>-</td>
@@ -27,6 +29,7 @@ In this repository, we plug ENACT to three such models, which are the [DETR](htt
       <td>DETR-C5 + ENACT</td>
       <td>R50</td>
       <td>300</td>
+      <td>8</td>
       <td>23.5</td>
       <td>0.0488</td>
       <td>-</td>
@@ -35,6 +38,7 @@ In this repository, we plug ENACT to three such models, which are the [DETR](htt
       <td>Conditional DETR-C5</td>
       <td>R101</td>
       <td>50</td>
+      <td>8</td>
       <td>46.6</td>
       <td>0.0826</td>
       <td>0.0637</td>
@@ -43,6 +47,7 @@ In this repository, we plug ENACT to three such models, which are the [DETR](htt
       <td>Conditional DETR-C5 + ENACT</td>
       <td>R101</td>
       <td>50</td>
+      <td>8</td>
       <td>36.7</td>
       <td>0.0779</td>
       <td>0.0605</td>
@@ -51,6 +56,7 @@ In this repository, we plug ENACT to three such models, which are the [DETR](htt
       <td>Anchor DETR-DC5</td>
       <td>R50</td>
       <td>50</td>
+      <td>4</td>
       <td>29.7</td>
       <td>0.0999</td>
       <td>0.0712</td>
@@ -59,6 +65,7 @@ In this repository, we plug ENACT to three such models, which are the [DETR](htt
       <td>Anchor DETR-DC5 + ENACT</td>
       <td>R50</td>
       <td>50</td>
+      <td>4</td>
       <td>17.7</td>
       <td>0.0845</td>
       <td>0.0616</td>
