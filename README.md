@@ -73,7 +73,7 @@ We provide comparisons in GPU memory usage, training and inference times (in sec
     </tr>
   </tbody>
 </table>
-All experiments were done using the COCO 2017 train118k set for training, and val5k for validation. The precisions are computed based on the validation performance. We also provide logs and checkpoints for the models trained using ENACT.
+All experiments were done using the COCO 2017 train118k set for training, and val5k for validation. The precisions are computed based on the validation performance. We also provide logs and checkpoints for the models trained using ENACT.\
 <table>
   <thead>
     <tr style="text-align: right;">
@@ -145,6 +145,27 @@ Initially, clone the repository.
 git clone https://github.com/GSavathrakis/ENACT.git
 cd ENACT
 ```
+
+### Install using conda
+Subsequently, set up an anaconda environment. This repo was tested on python 3.10 with cuda 11.7
+```
+conda create -n "env name" python="3.10 or above"
+conda activate "env name"
+```
+
+Next you need to install cuda in your conda environment and the additional packages
+```
+conda install nvidia/label/cuda-11.7.0::cuda
+pip install torch==2.0.0 torchvision cython scipy pycocotools tqdm numpy==1.23 opencv-python
+```
+### Install using Docker
+Alternatively, you can create a docker container using the Dockerfile and the .yml files provided.
+```
+docker compose build
+docker compose up
+```
+
+## Training
 
 ## Acknowledgements
 
