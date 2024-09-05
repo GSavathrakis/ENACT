@@ -116,8 +116,7 @@ All experiments were done using the COCO 2017 train118k set for training, and va
       <td>21.3</td>
       <td>45.5</td>
       <td>59.3</td>
-      <td>[model](https://drive.google.com/file/d/1_RyhT_xn9TqqJy1-4mb39KUexjJrMV_d/view?usp=drive_link)|[log](https://drive.google.com/file/d/1OLhlMNd2k7g9lIb7mbWg82gkdeykAG6E/view?usp=drive_link)</td>
-      <td></td>
+      <td><a href="https://drive.google.com/file/d/1_RyhT_xn9TqqJy1-4mb39KUexjJrMV_d/view?usp=drive_link">model</a>&nbsp;|&nbsp;<a href="https://drive.google.com/file/d/1OLhlMNd2k7g9lIb7mbWg82gkdeykAG6E/view?usp=drive_link">log</a></td>
     </tr>
     <tr>
       <td>Anchor DETR-DC5</td>
