@@ -73,7 +73,7 @@ We provide comparisons in GPU memory usage, training and inference times (in sec
     </tr>
   </tbody>
 </table>
-All experiments were done using the COCO 2017 train118k set for training, and val5k for validation. The precisions are computed based on the validation performance. We also provide logs and checkpoints for the models trained using ENACT.\
+All experiments were done using the COCO 2017 train118k set for training, and val5k for validation. The precisions are computed based on the validation performance. We also provide logs and checkpoints for the models trained using ENACT.
 <table>
   <thead>
     <tr style="text-align: right;">
