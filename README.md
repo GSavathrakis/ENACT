@@ -79,9 +79,9 @@ All experiments were done using the COCO 2017 train118k set for training, and va
     <tr style="text-align: right;">
       <th>model</th>
       <th>AP</th>
-      <th>APS</th>
-      <th>APM</th>
-      <th>APL</th>
+      <th>AP<sub>S</sub></th>
+      <th>AP<sub>M</sub></th>
+      <th>AP<sub>L</sub></th>
       <th>url</th>
     </tr>
   </thead>
