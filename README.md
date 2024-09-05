@@ -145,3 +145,12 @@ Initially, clone the repository.
 git clone https://github.com/GSavathrakis/ENACT.git
 cd ENACT
 ```
+
+## Acknowledgements
+
+<details><summary> Expand </summary>
+ 
+  * [https://github.com/facebookresearch/detr](https://github.com/facebookresearch/detr)
+  * [https://github.com/megvii-research/AnchorDETR](https://github.com/megvii-research/AnchorDETR)
+  * [https://github.com/Atten4Vis/ConditionalDETR](https://github.com/Atten4Vis/ConditionalDETR)
+</details>
