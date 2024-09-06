@@ -33,7 +33,7 @@ We provide comparisons in GPU memory usage, training and inference times (in sec
       <td>8</td>
       <td>23.5</td>
       <td>0.0488</td>
-      <td>-</td>
+      <td>0.0472</td>
     </tr>
     <tr>
       <td>Conditional DETR-C5</td>
@@ -96,11 +96,11 @@ All experiments were done using the COCO 2017 train118k set for training, and va
     </tr>
     <tr>
       <td>DETR-C5 + ENACT</td>
-      <td>-</td>
-      <td>-</td>
-      <td>-</td>
-      <td>-</td>
-      <td>-</td>
+      <td>39.0</td>
+      <td>18.3</td>
+      <td>42.2</td>
+      <td>57.0</td>
+      <td><td><a href="https://drive.google.com/file/d/1SSPlsywBkV5qUk4h4K0gstD8kgJldvaN/view?usp=drive_link">model</a>&nbsp;|&nbsp;<a href="https://drive.google.com/file/d/1sTyChBg0PA-Blf1upRdQ9rkSRemgf530/view?usp=drive_link">log</a></td></td>
     </tr>
     <tr>
       <td>Conditional DETR-C5</td>
