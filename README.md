@@ -24,7 +24,7 @@ We provide comparisons in GPU memory usage, training and inference times (in sec
       <td>8</td>
       <td>36.5</td>
       <td>0.0541</td>
-      <td>-</td>
+      <td>0.0482</td>
     </tr>
     <tr>
       <td>DETR-C5 + ENACT</td>
