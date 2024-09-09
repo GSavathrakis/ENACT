@@ -69,7 +69,7 @@ We provide comparisons in GPU memory usage, training and inference times (in sec
       <td>4</td>
       <td>17.7</td>
       <td>0.0845</td>
-      <td>0.0616</td>
+      <td>0.0608</td>
     </tr>
   </tbody>
 </table>
@@ -79,6 +79,7 @@ All experiments were done using the COCO 2017 train118k set for training, and va
     <tr style="text-align: right;">
       <th>model</th>
       <th>AP</th>
+      <th>AP<sub>50</sub></th>
       <th>AP<sub>S</sub></th>
       <th>AP<sub>M</sub></th>
       <th>AP<sub>L</sub></th>
@@ -89,6 +90,7 @@ All experiments were done using the COCO 2017 train118k set for training, and va
     <tr>
       <td>DETR-C5</td>
       <td>40.6</td>
+      <td>61.6</td>
       <td>19.9</td>
       <td>44.3</td>
       <td>60.2</td>
@@ -97,6 +99,7 @@ All experiments were done using the COCO 2017 train118k set for training, and va
     <tr>
       <td>DETR-C5 + ENACT</td>
       <td>39.0</td>
+      <td>59.1</td>
       <td>18.3</td>
       <td>42.2</td>
       <td>57.0</td>
@@ -105,6 +108,7 @@ All experiments were done using the COCO 2017 train118k set for training, and va
     <tr>
       <td>Conditional DETR-C5</td>
       <td>42.8</td>
+      <td>63.7</td>
       <td>21.7</td>
       <td>46.6</td>
       <td>60.9</td>
@@ -113,6 +117,7 @@ All experiments were done using the COCO 2017 train118k set for training, and va
     <tr>
       <td>Conditional DETR-C5 + ENACT</td>
       <td>41.5</td>
+      <td>62.2</td>
       <td>21.3</td>
       <td>45.5</td>
       <td>59.3</td>
@@ -121,6 +126,7 @@ All experiments were done using the COCO 2017 train118k set for training, and va
     <tr>
       <td>Anchor DETR-DC5</td>
       <td>44.3</td>
+      <td>64.9</td>
       <td>25.1</td>
       <td>48.1</td>
       <td>61.1</td>
@@ -128,11 +134,12 @@ All experiments were done using the COCO 2017 train118k set for training, and va
     </tr>
     <tr>
       <td>Anchor DETR-DC5 + ENACT</td>
-      <td>-</td>
-      <td>-</td>
-      <td>-</td>
-      <td>-</td>
-      <td>-</td>
+      <td>42.9</td>
+      <td>63.5</td>
+      <td>25.0</td>
+      <td>46.8</td>
+      <td>58.5</td>
+      <td><a href="https://drive.google.com/file/d/1CLWJl49gE8vCdBbCAMHrcgzeiK6JKiza/view?usp=drive_link">model</a>&nbsp;|&nbsp;<a href="https://drive.google.com/file/d/1arBV_A-HCi_lXlUxNGNAGOhKIxjs_D1Z/view?usp=drive_link">log</a></td>
     </tr>
   </tbody>
 </table>
