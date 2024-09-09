@@ -159,7 +159,6 @@ cd ENACT
 
 You should download the [MS COCO dataset](https://cocodataset.org/#download). This module was trained on the COCO 2017 dataset. The structure of the downloaded files should be the following:
 ```
-
 path_to_coco/
 ├── train2017/
 ├── val2017/
@@ -197,6 +196,12 @@ For example, if you want to train the Anchor-DETR model with ENACT you should ru
 python Anchor-DETR-ENACT/main.py --coco_path "Path to COCO dataset" --output_dir "Path to the directory where you want to save checkpoints"
 ```
 
+## Inference
+You can also evaluate the ENACT module on the three models using the pretrained models that can be downloaded from the links in the second table.\
+For example if you want to evaluate the DETR model with ENACT you should run:
+```
+python DETR-ENACT/main.py --coco_path "Path to COCO dataset" --output_dir "Path to the directory where you want to save checkpoints" --resume "Path to DETR-ENACT checkpoint" --eval
+```
 
 ## Acknowledgements
 
