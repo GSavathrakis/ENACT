@@ -1,4 +1,7 @@
-# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
+# ------------------------------------------------------------------------
+# Modified from DETR (https://github.com/facebookresearch/detr)
+# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
+# ------------------------------------------------------------------------
 """
 DETR Transformer class.
 
@@ -15,9 +18,6 @@ import torch.nn.functional as F
 from torch import nn, Tensor
 
 from .ENACT_attn.enact import ClustAttn
-from .embedding import Embedding
-from sklearn.cluster import KMeans
-import numpy as np 
 
 
 class Transformer(nn.Module):
@@ -38,9 +38,6 @@ class Transformer(nn.Module):
         decoder_norm = nn.LayerNorm(d_model)
         self.decoder = TransformerDecoder(decoder_layer, num_decoder_layers, decoder_norm,
                                           return_intermediate=return_intermediate_dec)
-        
-        self.embed_layer = Embedding(d_embed=d_model)
-        self.q_embed = Embedding(d_embed=d_model)
 
         self._reset_parameters()
 
@@ -137,10 +134,7 @@ class TransformerEncoderLayer(nn.Module):
     def __init__(self, device, sigma, d_model, nhead, dim_feedforward=2048, dropout=0.1,
                  activation="relu", normalize_before=False):
         super().__init__()
-        #self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
         self.self_attn = ClustAttn(sigma, d_model, dropout, nhead, device)
-        #self.EnClu = ClustAttn(nhead, d_model, dropout)
-        #self.self_attn = MHSA_fl_bs(nhead, d_model, dropout)
         # Implementation of Feedforward model
 
         self.dropout1 = nn.Dropout(dropout)
@@ -252,65 +246,6 @@ class TransformerDecoderLayer(nn.Module):
                                     tgt_key_padding_mask, memory_key_padding_mask, pos, query_pos)
         return self.forward_post(tgt, memory, tgt_mask, memory_mask,
                                  tgt_key_padding_mask, memory_key_padding_mask, pos, query_pos)
-
-
-
-
-class MHSA_fl_bs(nn.Module):
-    def __init__(self, n_heads, d_model, dropout):
-        super().__init__()
-        self.W_q = nn.Linear(d_model, d_model//n_heads) 
-        self.W_k = nn.Linear(d_model, d_model//n_heads) 
-        self.W_v = nn.Linear(d_model, d_model//n_heads)
-        self.W_b = nn.Linear(d_model//n_heads, d_model) 
-
-        self.dropout_q = nn.Dropout(dropout)
-        self.dropout_k = nn.Dropout(dropout)
-        self.dropout_v = nn.Dropout(dropout)
-
-        self.n_heads = n_heads
-        self.d_model = d_model
-    
-    def forward(self, q, k, h, w, v):
-        k = k.permute(1,0,2)
-
-        q = self.W_q(q.unsqueeze(1).expand(q.shape[0], self.n_heads, q.shape[1], q.shape[2]))
-        k = self.W_k(k.unsqueeze(1).expand(k.shape[0], self.n_heads, k.shape[1], k.shape[2]))
-        v = self.W_v(v.unsqueeze(1).expand(v.shape[0], self.n_heads, v.shape[1], v.shape[2]))
-
-        attention = torch.mean(self.W_b(torch.matmul(F.softmax(torch.matmul(k, q.transpose(2,3))/(self.d_model//self.n_heads)), v)), dim=1).permute(1,0,2)
-        #attention = torch.mean(self.W_b(torch.matmul(self.non_zero_softmax(mask*torch.matmul(k,q.transpose(2,3))/(self.d_model//self.n_heads)), v)), dim=0).view(spat,bs,-1)
-        #print(torch.mean(self.W_b(torch.matmul(self.non_zero_softmax(mask*torch.matmul(k,q.transpose(1,2))/(self.d_model//self.n_heads)), v)), dim=0).shape)
-        return attention
-
-
-
-class MHSA(nn.Module):
-    def __init__(self, n_heads, d_model, dropout):
-        super().__init__()
-        self.W_q = nn.Linear(d_model, d_model//n_heads) 
-        self.W_k = nn.Linear(d_model, d_model//n_heads) 
-        self.W_v = nn.Linear(d_model, d_model//n_heads)
-        self.W_b = nn.Linear(d_model//n_heads, d_model) 
-
-        self.dropout_q = nn.Dropout(dropout)
-        self.dropout_k = nn.Dropout(dropout)
-        self.dropout_v = nn.Dropout(dropout)
-
-        self.n_heads = n_heads
-    
-    def forward(self, q, k, h, w, v):
-
-        q = self.W_q(q.unsqueeze(1).expand(q.shape[0], self.n_heads, q.shape[1], q.shape[2]))
-        k = self.W_k(k.unsqueeze(1).expand(k.shape[0], self.n_heads, k.shape[1], k.shape[2]))
-        v = self.W_v(v.unsqueeze(1).expand(v.shape[0], self.n_heads, v.shape[1], v.shape[2]))
-
-        attn = torch.mean(self.W_b(torch.matmul(F.softmax(torch.matmul(q,k.transpose(2,3)), dim=-1), v)), dim=1) #FORGOT SOFTMAX
-
-        return attn
-
-
-
 
 
 def _get_clones(module, N):
