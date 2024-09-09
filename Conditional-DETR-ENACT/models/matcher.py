@@ -1,4 +1,8 @@
 # ------------------------------------------------------------------------
+# Copied from Conditional DETR (https://github.com/Atten4Vis/ConditionalDETR)
+# Copyright (c) 2021 Microsoft. All Rights Reserved.
+# Licensed under the Apache License, Version 2.0 [see LICENSE for details]
+# ------------------------------------------------------------------------
 # Modules to compute the matching cost and solve the corresponding LSAP.
 # Copyright (c) 2021 Microsoft. All Rights Reserved.
 # Licensed under the Apache License, Version 2.0 [see LICENSE for details]

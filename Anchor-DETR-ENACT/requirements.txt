@@ -1,3 +1,8 @@
+# ------------------------------------------------------------------------
+# Copied from Anchor DETR (https://github.com/megvii-research/AnchorDETR)
+# Copyright (c) 2021 megvii-model. All Rights Reserved.
+# ------------------------------------------------------------------------
+
 torch>=1.5.0
 torchvision>=0.6.0
 pycocotools

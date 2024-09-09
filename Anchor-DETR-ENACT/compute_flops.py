@@ -1,4 +1,5 @@
 # ------------------------------------------------------------------------
+# Copied from Anchor DETR (https://github.com/megvii-research/AnchorDETR)
 # Copyright (c) 2021 megvii-model. All Rights Reserved.
 # ------------------------------------------------------------------------
 
