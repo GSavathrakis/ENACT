@@ -148,7 +148,7 @@ All experiments were done using the COCO 2017 train118k set for training, and va
 
 
 
-## Instructions
+## Setup instructions
 Initially, clone the repository.
 ```
 git clone https://github.com/GSavathrakis/ENACT.git
