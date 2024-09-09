@@ -155,6 +155,19 @@ git clone https://github.com/GSavathrakis/ENACT.git
 cd ENACT
 ```
 
+### Download the data
+
+You should download the [MS COCO dataset](https://cocodataset.org/#download). This module was trained on the COCO 2017 dataset. The structure of the downloaded files should be the following:
+```
+
+path_to_coco/
+├── train2017/
+├── val2017/
+└── annotations/
+	├── instances_train2017.json
+	└── instances_val2017.json
+```
+
 ### Install using conda
 Subsequently, set up an anaconda environment. This repo was tested on python 3.10 with cuda 11.7
 ```
@@ -175,6 +188,15 @@ docker compose up
 ```
 
 ## Training
+In order to train one of the detection transformers, with the ENACT module, you should run: 
+```
+python "Path to one of the DETR variants models"/main.py --coco_path "Path to COCO dataset" --output_dir "Path to the directory where you want to save checkpoints"
+```
+For example, if you want to train the Anchor-DETR model with ENACT you should run:
+```
+python Anchor-DETR-ENACT/main.py --coco_path "Path to COCO dataset" --output_dir "Path to the directory where you want to save checkpoints"
+```
+
 
 ## Acknowledgements
 
