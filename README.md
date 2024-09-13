@@ -1,5 +1,5 @@
 # ENACT: Entropy-based Attention Clustering for detection Transformers
-This is the official implementation of the paper ENACT: Entropy-based Clustering of Attention Input for Improving the Computational Performance of Object Detection Transformers.\
+This is the official implementation of the paper [ENACT: Entropy-based Clustering of Attention Input for Improving the Computational Performance of Object Detection Transformers](https://arxiv.org/abs/2409.07541).\
 \
 ![ENACT](images/ENACT_framework.jpg)
 It is a plug-in module, used for clustering the input of Detection Transformers, based on their entropy which is learnable. In its current state, it can be plugged only in Detection Transformers that have a Multi-Head Self-Attention module in their encoder.\
