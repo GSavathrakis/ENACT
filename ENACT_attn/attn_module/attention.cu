@@ -118,3 +118,13 @@ vector<at::Tensor> forward_mhsa(at::Tensor Queries, at::Tensor Keys, at::Tensor 
         attn, soft_attn_ws
     };
 }
+
+vector<at::Tensor> backward_mhsa(at::Tensor grad_attn, vector<int> clust_start_inds, vector<int> clust_sizes, int total_cl_size){
+    at::Tensor grad_queries = at::zeros({grad_attn.size(0), grad_attn.size(1), grad_attn.size(2), grad_attn.size(3)}, grad_attn.options());
+    at::Tensor grad_keys    = at::zeros({total_cl_size, grad_attn.size(3)}, grad_attn.options());
+    at::Tensor grad_values    = at::zeros({total_cl_size, grad_attn.size(3)}, grad_attn.options());
+
+    return {
+        grad_queries, grad_keys, grad_values
+    };
+}
