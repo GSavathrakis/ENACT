@@ -111,6 +111,7 @@ vector<at::Tensor> forward_mhsa(at::Tensor Queries, at::Tensor Keys, at::Tensor 
     dim3 threadsPerBlock_attn(n_threads_attn_x, n_threads_attn_y);
     attention<<<numBlocks_attn, threadsPerBlock_attn>>>(soft_attn_ws.data_ptr<float>(), Values.transpose(0,1).data_ptr<float>(), Queries.size(1), Queries.size(0), Queries.size(2), Queries.size(3), attn_ws.size(2), attn.data_ptr<float>());
     cudaDeviceSynchronize();
+    attn = attn.reshape({Queries.size(0), Queries.size(1), Queries.size(2), Queries.size(3)});
 
 
     return{
