@@ -2,14 +2,12 @@
 #include <torch/extension.h>
 using namespace std;
 
-/*vector<at::Tensor> forward_mhsa(at::Tensor query, at::Tensor key, at::Tensor value, int n_heads, vector<int> cluster_end_inds_cumsum, vector<int> n_clusters, vector<int> n_clusters_cumsum, 
-                        vector<int> cluster_end_inds_times_spat, vector<int> cluster_start_inds_times_spat_cumsum, vector<int> cluster_end_inds_times_spat_all_pixs_attn, vector<int> cluster_start_inds_times_spat_all_pixs_attn,
-                        vector<int> cluster_end_inds_times_spat_all_pixs_vals, vector<int> cluster_start_inds_times_spat_all_pixs_vals, vector<int> group_sizes);
+extern "C" __global__ void attention_weights(const float* queries, const float* keys, const int n_heads, const int batch_size, const int spatial_sizes_uncl,
+                                  const int* spatial_start_ind_cl, const int* spatial_sizes_cl, const int sum_cl_pixels, const int feat_dims, float* attn_w);
 
-vector<at::Tensor> backward_mhsa(at::Tensor grad_out, at::Tensor attn_w, at::Tensor Value, at::Tensor Key, at::Tensor Query, vector<int> cluster_start_inds_all_pixs_all_inds_vals, vector<int> cluster_end_inds_times_spat_all_pixs_attn, vector<int> group_sizes, int total_spat_cl, 
-                                 vector<int> cluster_end_inds_cumsum, vector<int> n_clusters, vector<int> n_clusters_cumsum, vector<int> cluster_start_inds_times_spat_all_pixs_attn, vector<int> group_sizes_all_pixs,
-                                 vector<int> cluster_end_inds_times_spat_all_pixs_vals, vector<int> cluster_start_inds_times_spat_all_pixs_vals);*/
-//vector<at::Tensor> backward_mhsa(at::Tensor tens1, at::Tensor tens2, at::Tensor tens3, int n_heads, list<int> n_clusters, at::Tensor grad_output);
+extern "C" __global__ void softmax(const float* attn_ws, const int batch_size, const int n_heads, const int spatial_1, const int spatial_2, const int* spatial_start_ind_cl, const int* spatial_sizes_cl, float* soft_attn_w);
+extern "C" __global__ void attention(const float* attn_w, const float* values, const int n_heads, const int batch_size, const int spatial_1, const int feat_dims, const int spatial_2, float* attn);
+extern "C" __global__ void dot_product(const float* tensor1, const float* tensor2, const int n_heads, const int batch_size, const int spatial_dim1, const int spatial_dim2, const int feat_dims, float* result);
 
 vector<at::Tensor> forward_mhsa(at::Tensor Queries, at::Tensor Keys, at::Tensor Values, vector<int> clust_start_inds, vector<int> clust_sizes);
-vector<at::Tensor> backward_mhsa(at::Tensor tens1, at::Tensor tens2, at::Tensor tens3, int n_heads, list<int> n_clusters, at::Tensor grad_output);
+vector<at::Tensor> backward_mhsa(at::Tensor grad_attn, at::Tensor attn_w, at::Tensor Queries, at::Tensor Keys, at::Tensor Values, vector<int> clust_start_inds, vector<int> clust_sizes, int total_cl_size);
