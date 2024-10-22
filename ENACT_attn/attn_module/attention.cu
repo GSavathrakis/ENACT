@@ -90,7 +90,7 @@ vector<at::Tensor> backward_mhsa(at::Tensor grad_attn, at::Tensor attn_w, at::Te
 
     int batch_grad_v = grad_attn.size(0);
 
-    dim3 numBlocks_grad_v(n_blocks_grad_v_x, n_blocks_grad_v_y);
+    dim3 numBlocks_grad_v(n_blocks_grad_v_x, n_blocks_grad_v_y, batch_grad_v);
     dim3 threadsPerBlock_grad_v(n_threads_grad_v_x, n_threads_grad_v_y);
     dot_product<<<numBlocks_grad_v, threadsPerBlock_grad_v>>>(attn_w.transpose(1,2).data_ptr<float>(), grad_attn.transpose(1,2).data_ptr<float>(), Queries.size(1), Queries.size(0), attn_w.size(2), grad_attn.size(2), grad_attn.size(1), grad_values.data_ptr<float>());
     cudaDeviceSynchronize();
@@ -106,7 +106,7 @@ vector<at::Tensor> backward_mhsa(at::Tensor grad_attn, at::Tensor attn_w, at::Te
 
     int batch_grad_attn_w = grad_attn.size(0);
 
-    dim3 numBlocks_grad_attn_w(n_blocks_grad_attn_w_x, n_blocks_grad_attn_w_y);
+    dim3 numBlocks_grad_attn_w(n_blocks_grad_attn_w_x, n_blocks_grad_attn_w_y, batch_grad_attn_w);
     dim3 threadsPerBlock_grad_attn_w(n_threads_grad_attn_w_x, n_threads_grad_attn_w_y);
     dot_product<<<numBlocks_grad_attn_w, threadsPerBlock_grad_attn_w>>>(grad_attn.data_ptr<float>(), Values.data_ptr<float>() , Queries.size(1), Queries.size(0), grad_attn.size(1), Values.size(0), Values.size(1), grad_attn_w.data_ptr<float>());
     cudaDeviceSynchronize();
@@ -124,15 +124,39 @@ vector<at::Tensor> backward_mhsa(at::Tensor grad_attn, at::Tensor attn_w, at::Te
     cudaDeviceSynchronize();
 
     // Calculating the grad of the unweighted attention weights
-    at::Tensor unw_grad_attn_w = at::zeros({grad_attn.size(0)*grad_attn.size(1), grad_attn.size(2), total_cl_size}, grad_attn.options());
+    at::Tensor unw_grad_attn_w = at::zeros({grad_attn.size(0)*grad_attn.size(1), grad_attn.size(2), 1, total_cl_size}, grad_attn.options());
 
     int n_threads_unw_grad_attn_w_x = 32;
     int n_threads_unw_grad_attn_w_y = 32;
 
-    int n_blocks_unw_grad_attn_w_x = (Values.size(0) + n_threads_unw_grad_attn_w_x - 1)/n_threads_unw_grad_attn_w_x;
-    int n_blocks_unw_grad_attn_w_y = (grad_attn.size(0)*grad_attn.size(1) + n_threads_unw_grad_attn_w_y - 1)/n_threads_unw_grad_attn_w_y;
+    int n_blocks_unw_grad_attn_w_x = (grad_attn_w.size(0)*grad_attn_w.size(1) + n_threads_unw_grad_attn_w_x - 1)/n_threads_unw_grad_attn_w_x;
+    int n_blocks_unw_grad_attn_w_y = (grad_attn_w.size(0)*grad_attn_w.size(1)*grad_attn_w.size(2) + n_threads_unw_grad_attn_w_y - 1)/n_threads_unw_grad_attn_w_y;
+    int batch_unw_grad_attn_w = grad_attn_w.size(0)*grad_attn_w.size(1);
 
-    int batch_grad_attn_w = grad_attn.size(0);
+    dim3 numBlocks_unw_grad_attn_w(n_blocks_unw_grad_attn_w_x, n_blocks_unw_grad_attn_w_y, batch_unw_grad_attn_w);
+    dim3 threadsPerBlock_unw_grad_attn_w(n_threads_unw_grad_attn_w_x, n_threads_unw_grad_attn_w_y);
+    dot_product<<<numBlocks_unw_grad_attn_w, threadsPerBlock_unw_grad_attn_w>>>(Jacobian.data_ptr<float>(), grad_attn_w.data_ptr<float>(), Queries.size(1)*Queries.size(0), grad_attn.size(2), total_cl_size, 1, total_cl_size, unw_grad_attn_w.data_ptr<float>());
+    cudaDeviceSynchronize();
+
+    unw_grad_attn_w = unw_grad_attn_w.reshape({grad_attn.size(0)*grad_attn.size(1), grad_attn.size(2), total_cl_size});
+
+    // Calculating the grad of the queries
+    int n_threads_grad_q_x = 32;
+    int n_threads_grad_q_y = 32;
+
+    int n_blocks_grad_q_x = (Keys.size(1) + n_threads_grad_q_x - 1)/n_threads_grad_q_x;
+    int n_blocks_grad_q_y = (Queries.size(0)*Queries.size(1)*Queries.size(2) + n_threads_grad_q_y - 1)/n_threads_grad_q_y;
+    int batch_grad_q = Queries.size(0)*Queries.size(1);
+
+    dim3 numBlocks_grad_q(n_blocks_grad_q_x, n_blocks_grad_q_y, batch_grad_q);
+    dim3 threadsPerBlock_grad_q(n_threads_grad_q_x, n_threads_grad_q_y);
+    dot_product<<<numBlocks_grad_q, threadsPerBlock_grad_q>>>(unw_grad_attn_w.data_ptr<float>(), Keys.transpose(0,1).data_ptr<float>(), Queries.size(1), Queries.size(0), unw_grad_attn_w.size(1), Keys.size(1), Keys.size(0), grad_queries.data_ptr<float>());
+    cudaDeviceSynchronize();
+
+    grad_queries = sqrt(Queries.size(3))*grad_queries;
+    grad_queries = grad_queries.reshape({Queries.size(0), Queries.size(1), Queries.size(2), Queries.size(3)});
+
+    // Calculating the grad of the queries
 
 
 
