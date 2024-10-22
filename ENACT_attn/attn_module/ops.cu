@@ -61,3 +61,20 @@ __global__ void dot_product(const float* tensor1, const float* tensor2, const in
         result[bs_n_heads*spatial_dim1*spatial_dim2 + id1*spatial_dim2 + id2] = sum;
     }
 }
+
+__global__ void create_Jacobian(const float* tensor, const int Dim1, const int Dim2, const int Dim3, float* J){
+    
+    int comm_dims = blockIdx.y;
+    int id1 = blockIdx.x*blockDim.x + threadIdx.x;
+
+    if (id1<Dim2 && comm_dims<Dim1){
+        for (int d=0; d<Dim3; d++){
+            if (d==id1){
+                J[comm_dims*Dim2*Dim3 + id1*Dim3 + d] = tensor[comm_dims*Dim2+id1]*(1-tensor[comm_dims*Dim2+id1]);
+            }
+            else{
+                J[comm_dims*Dim2*Dim3 + id1*Dim3 + d] = -tensor[comm_dims*Dim2+id1]*tensor[comm_dims*Dim2+d];
+            }
+        }
+    }
+}

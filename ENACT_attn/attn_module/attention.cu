@@ -79,6 +79,7 @@ vector<at::Tensor> backward_mhsa(at::Tensor grad_attn, at::Tensor attn_w, at::Te
 
     at::Tensor grad_attn_w = at::zeros({grad_attn.size(0)*grad_attn.size(1), grad_attn.size(2), total_cl_size}, grad_attn.options());
 
+    // Calculating the grad of the values
     grad_attn = grad_attn.reshape({grad_attn.size(0)*grad_attn.size(1), grad_attn.size(2), grad_attn.size(3)});
 
     int n_threads_grad_v_x = 32;
@@ -96,6 +97,7 @@ vector<at::Tensor> backward_mhsa(at::Tensor grad_attn, at::Tensor attn_w, at::Te
 
     grad_values = grad_values.permute(1,0,2).sum(axis=-2);
 
+    // Calculating the grad of the attention weights
     int n_threads_grad_attn_w_x = 32;
     int n_threads_grad_attn_w_y = 32;
 
@@ -109,6 +111,28 @@ vector<at::Tensor> backward_mhsa(at::Tensor grad_attn, at::Tensor attn_w, at::Te
     dot_product<<<numBlocks_grad_attn_w, threadsPerBlock_grad_attn_w>>>(grad_attn.data_ptr<float>(), Values.data_ptr<float>() , Queries.size(1), Queries.size(0), grad_attn.size(1), Values.size(0), Values.size(1), grad_attn_w.data_ptr<float>());
     cudaDeviceSynchronize();
 
+    // Creating the Jacobian to calculate the softmax grad
+    at::Tensor Jacobian = at::zeros({grad_attn.size(0)*grad_attn.size(1), grad_attn.size(2), total_cl_size, total_cl_size}, grad_attn.options());
+
+    int n_threads_softmax = 1024;
+    int n_blocks_softmax_x = (grad_attn_w.size(2) + n_threads_softmax - 1)/n_threads_softmax;
+    int n_blocks_softmax_y = grad_attn_w.size(0)*grad_attn_w.size(1);
+
+    dim3 numBlocks_softmax(n_blocks_softmax_x, n_blocks_softmax_y);
+    dim3 threadsPerBlock_softmax(n_threads_softmax, 1);
+    create_Jacobian<<<numBlocks_softmax, threadsPerBlock_softmax>>>(grad_attn_w.data_ptr<float>(), grad_attn.size(0)*grad_attn.size(1)*grad_attn.size(2), total_cl_size, total_cl_size, Jacobian.data_ptr<float>());
+    cudaDeviceSynchronize();
+
+    // Calculating the grad of the unweighted attention weights
+    at::Tensor unw_grad_attn_w = at::zeros({grad_attn.size(0)*grad_attn.size(1), grad_attn.size(2), total_cl_size}, grad_attn.options());
+
+    int n_threads_unw_grad_attn_w_x = 32;
+    int n_threads_unw_grad_attn_w_y = 32;
+
+    int n_blocks_unw_grad_attn_w_x = (Values.size(0) + n_threads_unw_grad_attn_w_x - 1)/n_threads_unw_grad_attn_w_x;
+    int n_blocks_unw_grad_attn_w_y = (grad_attn.size(0)*grad_attn.size(1) + n_threads_unw_grad_attn_w_y - 1)/n_threads_unw_grad_attn_w_y;
+
+    int batch_grad_attn_w = grad_attn.size(0);
 
 
 
