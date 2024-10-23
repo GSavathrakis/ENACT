@@ -2,8 +2,11 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
+import ENACT
 import numpy as np
 import matplotlib.pyplot as plt
+
+from torch.autograd.function import once_differentiable
 
 
 class ClustAttn(nn.Module):
@@ -176,6 +179,49 @@ class ClustAttn(nn.Module):
         gaussian_kernel = 1./(2*torch.Tensor([np.pi]).to(device)*sx*sy)*torch.exp(-torch.pow(XX,2)/(2*sx**2)-torch.pow(YY,2)/(2*sy**2))
 
         return gaussian_kernel
+
+
+class ATTNFunction(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, clust_qs, ks, clust_vs, n_heads, end_inds_vals_cumsum, n_clusters_times_heads, q_shapes_cumsum, end_inds_attns, start_inds_attns_cumsum, end_inds_attns_all_pix, start_inds_attns_cumsum_all_pixs, end_inds_vals_all_pix, start_inds_vals_cumsum_all_pixs, gr_sizes, gr_sizes_all_pixs, start_inds_vals_cumsum_all_pixs_all_inds):
+        ctx.n_heads = n_heads
+        ctx.end_inds_vals_cumsum = end_inds_vals_cumsum
+        ctx.n_clusters_times_heads = n_clusters_times_heads
+        ctx.q_shapes_cumsum = q_shapes_cumsum
+        ctx.end_inds_attns = end_inds_attns
+        ctx.start_inds_attns_cumsum = start_inds_attns_cumsum
+        ctx.end_inds_attns_all_pix = end_inds_attns_all_pix
+        ctx.start_inds_attns_cumsum_all_pixs = start_inds_attns_cumsum_all_pixs
+        ctx.end_inds_vals_all_pix = end_inds_vals_all_pix
+        ctx.start_inds_vals_cumsum_all_pixs = start_inds_vals_cumsum_all_pixs
+        ctx.gr_sizes = gr_sizes
+        ctx.gr_sizes_all_pixs = gr_sizes_all_pixs
+        ctx.start_inds_vals_cumsum_all_pixs_all_inds = start_inds_vals_cumsum_all_pixs_all_inds
+
+        output, attn_w = ENACT.forward_mhsa(clust_qs, ks, clust_vs, n_heads, end_inds_vals_cumsum, n_clusters_times_heads, q_shapes_cumsum, end_inds_attns, start_inds_attns_cumsum, end_inds_attns_all_pix, start_inds_attns_cumsum_all_pixs, end_inds_vals_all_pix, start_inds_vals_cumsum_all_pixs, gr_sizes)
+        ctx.save_for_backward(clust_qs, ks, clust_vs, attn_w)
+        return output
+    
+    @staticmethod
+    @once_differentiable
+    def backward(ctx, grad_output):
+        clust_qs, ks, clust_vs, attn_w = ctx.saved_tensors
+        n_heads = ctx.n_heads
+        n_clusters_times_heads = ctx.n_clusters_times_heads
+        end_inds_vals_cumsum = ctx.end_inds_vals_cumsum
+        q_shapes_cumsum = ctx.q_shapes_cumsum
+        end_inds_attns = ctx.end_inds_attns
+        start_inds_attns_cumsum = ctx.start_inds_attns_cumsum
+        end_inds_attns_all_pix = ctx.end_inds_attns_all_pix
+        start_inds_attns_cumsum_all_pixs = ctx.start_inds_attns_cumsum_all_pixs
+        end_inds_vals_all_pix = ctx.end_inds_vals_all_pix
+        start_inds_vals_cumsum_all_pixs = ctx.start_inds_vals_cumsum_all_pixs
+        gr_sizes = ctx.gr_sizes
+        gr_sizes_all_pixs = ctx.gr_sizes_all_pixs
+        start_inds_vals_cumsum_all_pixs_all_inds = ctx.start_inds_vals_cumsum_all_pixs_all_inds
+
+        grad_qs, grad_ks, grad_vs = ENACT.backward_mhsa(grad_output, attn_w, clust_vs, ks, clust_qs, start_inds_vals_cumsum_all_pixs_all_inds, end_inds_attns_all_pix, gr_sizes_all_pixs, clust_qs.shape[1], end_inds_vals_cumsum, n_clusters_times_heads, q_shapes_cumsum, start_inds_attns_cumsum_all_pixs, gr_sizes_all_pixs, end_inds_vals_all_pix, start_inds_vals_cumsum_all_pixs)
+        return grad_qs, grad_ks, grad_vs, None, None, None
 
 class STEFunction(torch.autograd.Function):
     @staticmethod
