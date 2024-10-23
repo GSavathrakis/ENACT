@@ -153,14 +153,24 @@ vector<at::Tensor> backward_mhsa(at::Tensor grad_attn, at::Tensor attn_w, at::Te
     dot_product<<<numBlocks_grad_q, threadsPerBlock_grad_q>>>(unw_grad_attn_w.data_ptr<float>(), Keys.transpose(0,1).data_ptr<float>(), Queries.size(1), Queries.size(0), unw_grad_attn_w.size(1), Keys.size(1), Keys.size(0), grad_queries.data_ptr<float>());
     cudaDeviceSynchronize();
 
-    grad_queries = sqrt(Queries.size(3))*grad_queries;
+    grad_queries = (1./sqrt(Queries.size(3)))*grad_queries;
     grad_queries = grad_queries.reshape({Queries.size(0), Queries.size(1), Queries.size(2), Queries.size(3)});
 
-    // Calculating the grad of the queries
+    // Calculating the grad of the Keys
+    int n_threads_grad_k_x = 32;
+    int n_threads_grad_k_y = 32;
 
+    int n_blocks_grad_k_x = (Queries.size(0)*Queries.size(1)*total_cl_size + n_threads_grad_k_x - 1)/n_threads_grad_k_x;
+    int n_blocks_grad_k_y = (Queries.size(0)*Queries.size(1)*Queries.size(3) + n_threads_grad_k_y - 1)/n_threads_grad_k_y;
+    int batch_grad_k = Queries.size(0)*Queries.size(1);
 
+    dim3 numBlocks_grad_k(n_blocks_grad_k_x, n_blocks_grad_k_y, batch_grad_k);
+    dim3 threadsPerBlock_grad_k(n_threads_grad_k_x, n_threads_grad_k_y);
+    dot_product<<<numBlocks_grad_k, threadsPerBlock_grad_k>>>(unw_grad_attn_w.transpose(1,2).data_ptr<float>(), Queries.transpose(1,2).data_ptr<float>(), Queries.size(1), Queries.size(0), unw_grad_attn_w.size(2), Queries.size(2), Queries.size(1), grad_keys.data_ptr<float>());
+    cudaDeviceSynchronize();
 
-
+    grad_keys = (1./sqrt(Queries.size(3)))*grad_keys;
+    grad_keys = grad_keys.transpose(1,0,2).sum(axis=-2);
 
     return {
         grad_queries, grad_keys, grad_values
