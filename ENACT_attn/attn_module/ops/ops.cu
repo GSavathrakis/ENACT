@@ -1,4 +1,4 @@
-#include "attention.h"
+#include "ops.h"
 
 __global__ void attention_weights(const float* queries, const float* keys, const int n_heads, const int batch_size, const int spatial_sizes_uncl,
                                   const int* spatial_start_ind_cl, const int* spatial_sizes_cl, const int sum_cl_pixels, const int feat_dims, float* attn_w){

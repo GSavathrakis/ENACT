@@ -3,6 +3,7 @@
 #include <cuda_runtime.h>
 #include <ATen/ATen.h>
 #include "attention.h"
+#include "ops/ops.h"
 #include <chrono>
 
 using namespace std;
@@ -73,9 +74,9 @@ vector<at::Tensor> forward_mhsa(at::Tensor Queries, at::Tensor Keys, at::Tensor 
 }
 
 vector<at::Tensor> backward_mhsa(at::Tensor grad_attn, at::Tensor attn_w, at::Tensor Queries, at::Tensor Keys, at::Tensor Values, vector<int> clust_start_inds, vector<int> clust_sizes, int total_cl_size){
-    at::Tensor grad_queries = at::zeros({grad_attn.size(0), grad_attn.size(1), grad_attn.size(2), grad_attn.size(3)}, grad_attn.options());
-    at::Tensor grad_keys    = at::zeros({total_cl_size, grad_attn.size(3)}, grad_attn.options());
-    at::Tensor grad_values    = at::zeros({total_cl_size, grad_attn.size(3)}, grad_attn.options());
+    at::Tensor grad_queries = at::zeros({grad_attn.size(0)*grad_attn.size(1), grad_attn.size(2), grad_attn.size(3)}, grad_attn.options());
+    at::Tensor grad_keys    = at::zeros({grad_attn.size(0)*grad_attn.size(1), total_cl_size, grad_attn.size(3)}, grad_attn.options());
+    at::Tensor grad_values    = at::zeros({grad_attn.size(0)*grad_attn.size(1), total_cl_size, grad_attn.size(3)}, grad_attn.options());
 
     at::Tensor grad_attn_w = at::zeros({grad_attn.size(0)*grad_attn.size(1), grad_attn.size(2), total_cl_size}, grad_attn.options());
 
@@ -95,7 +96,7 @@ vector<at::Tensor> backward_mhsa(at::Tensor grad_attn, at::Tensor attn_w, at::Te
     dot_product<<<numBlocks_grad_v, threadsPerBlock_grad_v>>>(attn_w.transpose(1,2).data_ptr<float>(), grad_attn.transpose(1,2).data_ptr<float>(), Queries.size(1), Queries.size(0), attn_w.size(2), grad_attn.size(2), grad_attn.size(1), grad_values.data_ptr<float>());
     cudaDeviceSynchronize();
 
-    grad_values = grad_values.permute(1,0,2).sum(axis=-2);
+    grad_values = grad_values.permute({1,0,2}).sum(-2);
 
     // Calculating the grad of the attention weights
     int n_threads_grad_attn_w_x = 32;
@@ -170,7 +171,7 @@ vector<at::Tensor> backward_mhsa(at::Tensor grad_attn, at::Tensor attn_w, at::Te
     cudaDeviceSynchronize();
 
     grad_keys = (1./sqrt(Queries.size(3)))*grad_keys;
-    grad_keys = grad_keys.transpose(1,0,2).sum(axis=-2);
+    grad_keys = grad_keys.permute({1,0,2}).sum(-2);
 
     return {
         grad_queries, grad_keys, grad_values

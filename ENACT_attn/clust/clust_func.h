@@ -1,5 +1,5 @@
-#ifndef FUNCTIONS_H
-#define FUNCTIONS_H
+#ifndef CLUSTERS_H
+#define CLUSTERS_H
 
 #include <torch/torch.h>
 using namespace std;
