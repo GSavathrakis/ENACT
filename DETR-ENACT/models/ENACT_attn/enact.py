@@ -48,38 +48,6 @@ class ClustAttn(nn.Module):
         
         entropy_step = F.conv1d(entropy.unsqueeze(1), self.Sobel_2der.to(self.device).unsqueeze(0).unsqueeze(0), padding='same').squeeze(1)
         entropy_step = STEFunction.apply(entropy_step)
-        #print(entropy_step)
-
-        '''
-        means = []
-        stds = []
-        for b in range(bs):
-            boundaries = torch.diff(entropy_step[b].type(torch.int64), prepend=~entropy_step[b][:1].type(torch.int64), append=~entropy_step[b][-1:].type(torch.int64))
-            region_lengths = torch.diff(torch.nonzero(boundaries).squeeze())
-            mean_region_length = region_lengths.float().mean()
-            std_region_length = region_lengths.float().std()
-            means.append(mean_region_length.item())
-            stds.append(std_region_length.item())
-        
-        clst_sh = round(np.mean(means))
-        k = k[:,(spat%clst_sh)//2:spat-(spat%clst_sh - (spat%clst_sh)//2),:]
-        v = v[:,(spat%clst_sh)//2:spat-(spat%clst_sh - (spat%clst_sh)//2),:]
-        k = k.view(bs, k.shape[1]//clst_sh, clst_sh, feats)
-        v = v.view(bs, v.shape[1]//clst_sh, clst_sh, feats)
-        entropy = entropy[:, (spat%clst_sh)//2:spat-(spat%clst_sh - (spat%clst_sh)//2)]
-        entropy = F.softmax(entropy.view(bs, entropy.shape[1]//clst_sh, clst_sh), -1).unsqueeze(-1)
-        k = (entropy*k).sum(-2)
-        v = (entropy*v).sum(-2)
-
-        k = self.W_k(k).view(bs, k.shape[1], self.n_heads, feats//self.n_heads).permute(2,0,1,3)
-        q = self.W_q(q).view(bs, spat, self.n_heads, feats//self.n_heads).permute(2,0,1,3)
-        v = self.W_v(v).view(bs, v.shape[1], self.n_heads, feats//self.n_heads).permute(2,0,1,3)
-
-        attention = self.W_o(torch.matmul(F.softmax(torch.matmul(q, k.transpose(2,3)), -1)/(feats//self.n_heads), v).permute(1,2,0,3).flatten(2,3)).permute(1,0,2)
-        '''
-
-
-        #attention = self.attn(k.permute(1,0,2), q.permute(1,0,2), v.permute(1,0,2))[0]
         
         
         k = ENACT.enact_cluster(entropy, entropy_step, k)
@@ -100,30 +68,6 @@ class ClustAttn(nn.Module):
         start_inds = copy.deepcopy(sizes)
         start_inds.insert(0,0)
         start_inds.pop()
-        
-        n_clusters_times_heads = n_clusters*self.n_heads
-        n_clusters_times_heads_cumsum = np.array(n_clusters_times_heads).cumsum().tolist()
-        #print(n_clusters_times_heads_cumsum)
-        end_inds_vals_cumsum = (np.array(n_clusters_times_heads).cumsum()-1).tolist()
-        end_inds_attns = np.repeat(np.array(n_clusters_times_heads),spat*np.ones(np.array(n_clusters_times_heads).shape, dtype=np.int64)).tolist()
-        end_inds_attns_cumsum = (np.array(end_inds_attns).cumsum() - 1).tolist()
-        start_inds_attns_cumsum = (np.array(end_inds_attns).cumsum()).tolist()
-        start_inds_attns_cumsum.insert(0,0)
-        start_inds_attns_cumsum.pop()
-        q_shapes_cumsum = np.array(n_clusters_times_heads).cumsum().tolist()
-        end_inds_attns_all_pix = np.repeat(np.arange(len(np.array(end_inds_attns))), np.array(end_inds_attns)).tolist()
-        start_inds_attns_cumsum_all_pixs = np.repeat(np.array(start_inds_attns_cumsum), np.array(end_inds_attns)).tolist()
-        end_inds_vals_all_pix = np.repeat(np.arange(len(np.array(n_clusters_times_heads))), np.array(n_clusters_times_heads)).tolist()
-        start_inds_vals_cumsum_all_pixs = (np.array(end_inds_vals_cumsum)+1).tolist()
-        start_inds_vals_cumsum_all_pixs.insert(0,0)
-        start_inds_vals_cumsum_all_pixs.pop()
-        start_inds_vals_cumsum_all_pixs = np.repeat(np.array(start_inds_vals_cumsum_all_pixs), np.array(n_clusters_times_heads)).tolist()
-        start_inds_vals_cumsum_all_pixs_all_inds = np.repeat(np.array(start_inds_vals_cumsum_all_pixs),spat*np.ones(np.array(start_inds_vals_cumsum_all_pixs).shape, dtype=np.int64)).tolist()
-        gr_sizes = np.repeat(np.array(n_clusters_times_heads), np.array(n_clusters_times_heads))
-        gr_sizes_all_pixs = np.repeat(end_inds_attns, end_inds_attns)
-        
-
-        #attention = ATTNFunction.apply(q, k, v, self.n_heads, end_inds_vals_cumsum, n_clusters_times_heads, q_shapes_cumsum, end_inds_attns, start_inds_attns_cumsum, end_inds_attns_all_pix, start_inds_attns_cumsum_all_pixs, end_inds_vals_all_pix, start_inds_vals_cumsum_all_pixs, gr_sizes, gr_sizes_all_pixs, start_inds_vals_cumsum_all_pixs_all_inds)
         
         attention = ATTNFunction.apply(q, k, v, start_inds, sizes)
 
