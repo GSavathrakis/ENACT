@@ -48,6 +48,7 @@ class ClustAttn(nn.Module):
         entropy_step = STEFunction.apply(entropy_step)
         #print(entropy_step)
 
+        '''
         means = []
         stds = []
         for b in range(bs):
@@ -73,22 +74,22 @@ class ClustAttn(nn.Module):
         v = self.W_v(v).view(bs, v.shape[1], self.n_heads, feats//self.n_heads).permute(2,0,1,3)
 
         attention = self.W_o(torch.matmul(F.softmax(torch.matmul(q, k.transpose(2,3)), -1)/(feats//self.n_heads), v).permute(1,2,0,3).flatten(2,3)).permute(1,0,2)
-
+        '''
 
 
         #attention = self.attn(k.permute(1,0,2), q.permute(1,0,2), v.permute(1,0,2))[0]
         
-        """
-        q = ENACT.enact_cluster(entropy, entropy_step, q)
+        
+        k = ENACT.enact_cluster(entropy, entropy_step, k)
         v  = ENACT.enact_cluster(entropy, entropy_step, v)
 
-        q = self.W_q(torch.cat((q), dim=0).to(self.device))
-        k = self.W_k(k)
+        q = self.W_q(q)
+        k = self.W_k(torch.cat((k), dim=0).to(self.device))
         v  = self.W_v(torch.cat((v), dim=0).to(self.device))
         
 
-        q = q.view(-1, self.n_heads, feats//self.n_heads).permute(1, 0, 2)
-        k = k.view(bs, spat, self.n_heads, feats//self.n_heads).permute(2, 0, 1, 3)
+        q = q.view(bs, spat, self.n_heads, feats//self.n_heads).permute(2, 0, 1, 3)
+        k = k.view(-1, self.n_heads, feats//self.n_heads).permute(1, 0, 2)
         v  = v.view(-1, self.n_heads, feats//self.n_heads).permute(1, 0, 2)
 
         #q = torch.randn(2, 9, 10).to(self.device)
@@ -141,7 +142,7 @@ class ClustAttn(nn.Module):
 
         attention = attention.permute(1,2,0,3)
         attention = self.W_o(attention.flatten(2,3))
-        """
+        
         return attention
         
     @staticmethod
