@@ -9,9 +9,9 @@
 using namespace std;
 
 vector<at::Tensor> forward_mhsa(at::Tensor Queries, at::Tensor Keys, at::Tensor Values, vector<int> clust_start_inds, vector<int> clust_sizes){
-    // Queries shape: Batch size x num heads x spatial dimensions x feature dimensions
+    // Queries shape: num heads x Batch size x spatial dimensions x feature dimensions
     // Keys shape:    concatenated spatial dims along batch size and num heads x feature dimensions
-    // Values shape: Batch size x num heads x spatial dimensions x feature dimensions
+    // Values shape: concatenated spatial dims along batch size and num heads x feature dimensions
 
     at::Tensor attn_ws = at::zeros({Queries.size(0)*Queries.size(1), Queries.size(2), Keys.size(0)}, Queries.options());
     at::Tensor soft_attn_ws = at::zeros({Queries.size(0)*Queries.size(1), Queries.size(2), Keys.size(0)}, Queries.options());
@@ -35,7 +35,7 @@ vector<at::Tensor> forward_mhsa(at::Tensor Queries, at::Tensor Keys, at::Tensor 
 
     dim3 numBlocks_attn_ws(n_blocks_attn_ws_x, n_blocks_attn_ws_y, batch_attn_ws);
     dim3 threadsPerBlock_attn_ws(n_threads_attn_ws_x, n_threads_attn_ws_y);
-    attention_weights<<<numBlocks_attn_ws, threadsPerBlock_attn_ws>>>(Queries.data_ptr<float>(), Keys.data_ptr<float>(), Queries.size(1), Queries.size(0), Queries.size(2), 
+    attention_weights<<<numBlocks_attn_ws, threadsPerBlock_attn_ws>>>(Queries.data_ptr<float>(), Keys.data_ptr<float>(), Queries.size(0), Queries.size(1), Queries.size(2), 
                                                      clust_start_inds_gpu, clust_sizes_gpu, Keys.size(0), Keys.size(1), attn_ws.data_ptr<float>());
     cudaDeviceSynchronize();
     attn_ws = attn_ws/sqrt(Keys.size(1));
@@ -63,7 +63,7 @@ vector<at::Tensor> forward_mhsa(at::Tensor Queries, at::Tensor Keys, at::Tensor 
 
     dim3 numBlocks_attn(n_blocks_attn_ws_x, n_blocks_attn_ws_y, batch_attn_ws);
     dim3 threadsPerBlock_attn(n_threads_attn_x, n_threads_attn_y);
-    attention<<<numBlocks_attn, threadsPerBlock_attn>>>(soft_attn_ws.data_ptr<float>(), Values.transpose(0,1).data_ptr<float>(), Queries.size(1), Queries.size(0), Queries.size(2), Queries.size(3), attn_ws.size(2), attn.data_ptr<float>());
+    attention<<<numBlocks_attn, threadsPerBlock_attn>>>(soft_attn_ws.data_ptr<float>(), Values.transpose(0,1).data_ptr<float>(), Queries.size(0), Queries.size(1), Queries.size(2), Queries.size(3), attn_ws.size(2), attn.data_ptr<float>());
     cudaDeviceSynchronize();
     attn = attn.reshape({Queries.size(0), Queries.size(1), Queries.size(2), Queries.size(3)});
 
@@ -93,7 +93,7 @@ vector<at::Tensor> backward_mhsa(at::Tensor grad_attn, at::Tensor attn_w, at::Te
 
     dim3 numBlocks_grad_v(n_blocks_grad_v_x, n_blocks_grad_v_y, batch_grad_v);
     dim3 threadsPerBlock_grad_v(n_threads_grad_v_x, n_threads_grad_v_y);
-    dot_product<<<numBlocks_grad_v, threadsPerBlock_grad_v>>>(attn_w.transpose(1,2).data_ptr<float>(), grad_attn.transpose(1,2).data_ptr<float>(), Queries.size(1), Queries.size(0), attn_w.size(2), grad_attn.size(2), grad_attn.size(1), grad_values.data_ptr<float>());
+    dot_product<<<numBlocks_grad_v, threadsPerBlock_grad_v>>>(attn_w.transpose(1,2).data_ptr<float>(), grad_attn.transpose(1,2).data_ptr<float>(), Queries.size(0), Queries.size(1), attn_w.size(2), grad_attn.size(2), grad_attn.size(1), grad_values.data_ptr<float>());
     cudaDeviceSynchronize();
 
     grad_values = grad_values.permute({1,0,2}).sum(-2);
@@ -109,7 +109,7 @@ vector<at::Tensor> backward_mhsa(at::Tensor grad_attn, at::Tensor attn_w, at::Te
 
     dim3 numBlocks_grad_attn_w(n_blocks_grad_attn_w_x, n_blocks_grad_attn_w_y, batch_grad_attn_w);
     dim3 threadsPerBlock_grad_attn_w(n_threads_grad_attn_w_x, n_threads_grad_attn_w_y);
-    dot_product<<<numBlocks_grad_attn_w, threadsPerBlock_grad_attn_w>>>(grad_attn.data_ptr<float>(), Values.data_ptr<float>() , Queries.size(1), Queries.size(0), grad_attn.size(1), Values.size(0), Values.size(1), grad_attn_w.data_ptr<float>());
+    dot_product<<<numBlocks_grad_attn_w, threadsPerBlock_grad_attn_w>>>(grad_attn.data_ptr<float>(), Values.data_ptr<float>() , Queries.size(0), Queries.size(1), grad_attn.size(1), Values.size(0), Values.size(1), grad_attn_w.data_ptr<float>());
     cudaDeviceSynchronize();
 
     // Creating the Jacobian to calculate the softmax grad
@@ -151,7 +151,7 @@ vector<at::Tensor> backward_mhsa(at::Tensor grad_attn, at::Tensor attn_w, at::Te
 
     dim3 numBlocks_grad_q(n_blocks_grad_q_x, n_blocks_grad_q_y, batch_grad_q);
     dim3 threadsPerBlock_grad_q(n_threads_grad_q_x, n_threads_grad_q_y);
-    dot_product<<<numBlocks_grad_q, threadsPerBlock_grad_q>>>(unw_grad_attn_w.data_ptr<float>(), Keys.transpose(0,1).data_ptr<float>(), Queries.size(1), Queries.size(0), unw_grad_attn_w.size(1), Keys.size(1), Keys.size(0), grad_queries.data_ptr<float>());
+    dot_product<<<numBlocks_grad_q, threadsPerBlock_grad_q>>>(unw_grad_attn_w.data_ptr<float>(), Keys.transpose(0,1).data_ptr<float>(), Queries.size(0), Queries.size(1), unw_grad_attn_w.size(1), Keys.size(1), Keys.size(0), grad_queries.data_ptr<float>());
     cudaDeviceSynchronize();
 
     grad_queries = (1./sqrt(Queries.size(3)))*grad_queries;
@@ -167,7 +167,7 @@ vector<at::Tensor> backward_mhsa(at::Tensor grad_attn, at::Tensor attn_w, at::Te
 
     dim3 numBlocks_grad_k(n_blocks_grad_k_x, n_blocks_grad_k_y, batch_grad_k);
     dim3 threadsPerBlock_grad_k(n_threads_grad_k_x, n_threads_grad_k_y);
-    dot_product<<<numBlocks_grad_k, threadsPerBlock_grad_k>>>(unw_grad_attn_w.transpose(1,2).data_ptr<float>(), Queries.transpose(1,2).data_ptr<float>(), Queries.size(1), Queries.size(0), unw_grad_attn_w.size(2), Queries.size(2), Queries.size(1), grad_keys.data_ptr<float>());
+    dot_product<<<numBlocks_grad_k, threadsPerBlock_grad_k>>>(unw_grad_attn_w.transpose(1,2).data_ptr<float>(), Queries.transpose(1,2).data_ptr<float>(), Queries.size(0), Queries.size(1), unw_grad_attn_w.size(2), Queries.size(3), Queries.size(2), grad_keys.data_ptr<float>());
     cudaDeviceSynchronize();
 
     grad_keys = (1./sqrt(Queries.size(3)))*grad_keys;

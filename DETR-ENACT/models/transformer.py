@@ -148,15 +148,15 @@ class TransformerEncoderLayer(nn.Module):
         self.activation = _get_activation_fn(activation)
         self.normalize_before = normalize_before
     
-    def forward(self, q, k, v, h, w):
-        attn = self.self_attn(q, k, v, h, w)
-        v = self.norm1(v + self.dropout1(attn))
-        v2 = self.activation(self.linear1(v))
-        v2 = self.dropout2(v2)
-        v2 = self.linear2(v2)
-        v = self.norm2(v + self.dropout3(v2))
+    def forward(self, q, k, src, h, w):
+        src2 = self.self_attn(q, k, src, h, w)
+        src = self.norm1(src + self.dropout1(src2))
+        src2 = self.activation(self.linear1(src))
+        src2 = self.dropout2(src2)
+        src2 = self.linear2(src2)
+        src = self.norm2(src + self.dropout3(src2))
 
-        return v
+        return src
 
 
 class TransformerDecoderLayer(nn.Module):

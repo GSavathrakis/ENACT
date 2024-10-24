@@ -1,12 +1,14 @@
 import torch
 import torch.nn.functional as F
 from torch import nn
+from torch.autograd.function import once_differentiable
 
+import copy
 import ENACT
 import numpy as np
 import matplotlib.pyplot as plt
 
-from torch.autograd.function import once_differentiable
+
 
 
 class ClustAttn(nn.Module):
@@ -89,17 +91,19 @@ class ClustAttn(nn.Module):
         
 
         q = q.view(bs, spat, self.n_heads, feats//self.n_heads).permute(2, 0, 1, 3)
-        k = k.view(-1, self.n_heads, feats//self.n_heads).permute(1, 0, 2)
-        v  = v.view(-1, self.n_heads, feats//self.n_heads).permute(1, 0, 2)
-
-        #q = torch.randn(2, 9, 10).to(self.device)
-        #k = torch.randn(2, 3, 4, 10).to(self.device)
-        #v = torch.randn(2, 9, 10).to(self.device)
+        k = k.view(-1, self.n_heads, feats//self.n_heads).permute(1, 0, 2).flatten(0,1)
+        v  = v.view(-1, self.n_heads, feats//self.n_heads).permute(1, 0, 2).flatten(0,1)
 
         n_clusters = ENACT.n_clusters(entropy_step)
+
+        sizes = np.array(n_clusters*self.n_heads).cumsum().tolist()
+        start_inds = copy.deepcopy(sizes)
+        start_inds.insert(0,0)
+        start_inds.pop()
         
         n_clusters_times_heads = n_clusters*self.n_heads
         n_clusters_times_heads_cumsum = np.array(n_clusters_times_heads).cumsum().tolist()
+        #print(n_clusters_times_heads_cumsum)
         end_inds_vals_cumsum = (np.array(n_clusters_times_heads).cumsum()-1).tolist()
         end_inds_attns = np.repeat(np.array(n_clusters_times_heads),spat*np.ones(np.array(n_clusters_times_heads).shape, dtype=np.int64)).tolist()
         end_inds_attns_cumsum = (np.array(end_inds_attns).cumsum() - 1).tolist()
@@ -118,30 +122,15 @@ class ClustAttn(nn.Module):
         gr_sizes = np.repeat(np.array(n_clusters_times_heads), np.array(n_clusters_times_heads))
         gr_sizes_all_pixs = np.repeat(end_inds_attns, end_inds_attns)
         
-        
-        
-        
-        n_clusters_times_heads_times_spat = np.repeat(np.array(n_clusters_times_heads),spat*np.ones(np.array(n_clusters_times_heads).shape, dtype=np.int64)).tolist()
-        n_clusters_times_heads_times_spat_cumsum = np.array(n_clusters_times_heads_times_spat).cumsum().tolist()
-        
-        n_clusters = [spat, spat, spat, spat, spat, spat, spat, spat]
-
-        q = self.W_q(q)
-        k = self.W_k(k)
-        v = self.W_v(v)
-        
-        q = q.flatten(0,1).view(-1, self.n_heads, feats//self.n_heads).permute(1, 0, 2)
-        k = k.view(bs, spat, self.n_heads, feats//self.n_heads).permute(2, 0, 1, 3)
-        v  = v.flatten(0,1).view(-1, self.n_heads, feats//self.n_heads).permute(1, 0, 2)
-        
-        
 
         #attention = ATTNFunction.apply(q, k, v, self.n_heads, end_inds_vals_cumsum, n_clusters_times_heads, q_shapes_cumsum, end_inds_attns, start_inds_attns_cumsum, end_inds_attns_all_pix, start_inds_attns_cumsum_all_pixs, end_inds_vals_all_pix, start_inds_vals_cumsum_all_pixs, gr_sizes, gr_sizes_all_pixs, start_inds_vals_cumsum_all_pixs_all_inds)
         
-        attention = ATTNFunction.apply(q, k, v, self.n_heads, n_clusters, self.device)
+        attention = ATTNFunction.apply(q, k, v, start_inds, sizes)
 
         attention = attention.permute(1,2,0,3)
-        attention = self.W_o(attention.flatten(2,3))
+        attention = self.W_o(attention.flatten(2,3).permute(1,0,2))
+
+        
         
         return attention
         
@@ -184,45 +173,24 @@ class ClustAttn(nn.Module):
 
 class ATTNFunction(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, clust_qs, ks, clust_vs, n_heads, end_inds_vals_cumsum, n_clusters_times_heads, q_shapes_cumsum, end_inds_attns, start_inds_attns_cumsum, end_inds_attns_all_pix, start_inds_attns_cumsum_all_pixs, end_inds_vals_all_pix, start_inds_vals_cumsum_all_pixs, gr_sizes, gr_sizes_all_pixs, start_inds_vals_cumsum_all_pixs_all_inds):
-        ctx.n_heads = n_heads
-        ctx.end_inds_vals_cumsum = end_inds_vals_cumsum
-        ctx.n_clusters_times_heads = n_clusters_times_heads
-        ctx.q_shapes_cumsum = q_shapes_cumsum
-        ctx.end_inds_attns = end_inds_attns
-        ctx.start_inds_attns_cumsum = start_inds_attns_cumsum
-        ctx.end_inds_attns_all_pix = end_inds_attns_all_pix
-        ctx.start_inds_attns_cumsum_all_pixs = start_inds_attns_cumsum_all_pixs
-        ctx.end_inds_vals_all_pix = end_inds_vals_all_pix
-        ctx.start_inds_vals_cumsum_all_pixs = start_inds_vals_cumsum_all_pixs
-        ctx.gr_sizes = gr_sizes
-        ctx.gr_sizes_all_pixs = gr_sizes_all_pixs
-        ctx.start_inds_vals_cumsum_all_pixs_all_inds = start_inds_vals_cumsum_all_pixs_all_inds
-
-        output, attn_w = ENACT.forward_mhsa(clust_qs, ks, clust_vs, n_heads, end_inds_vals_cumsum, n_clusters_times_heads, q_shapes_cumsum, end_inds_attns, start_inds_attns_cumsum, end_inds_attns_all_pix, start_inds_attns_cumsum_all_pixs, end_inds_vals_all_pix, start_inds_vals_cumsum_all_pixs, gr_sizes)
-        ctx.save_for_backward(clust_qs, ks, clust_vs, attn_w)
+    def forward(ctx, qs, clust_ks, clust_vs, start_indices, cl_sizes):
+        
+        ctx.start_indices = start_indices
+        ctx.cl_sizes = cl_sizes
+        output, attn_w = ENACT.forward_mhsa(qs, clust_ks, clust_vs, start_indices, cl_sizes)
+        ctx.save_for_backward(qs, clust_ks, clust_vs, attn_w)
         return output
     
     @staticmethod
     @once_differentiable
     def backward(ctx, grad_output):
-        clust_qs, ks, clust_vs, attn_w = ctx.saved_tensors
-        n_heads = ctx.n_heads
-        n_clusters_times_heads = ctx.n_clusters_times_heads
-        end_inds_vals_cumsum = ctx.end_inds_vals_cumsum
-        q_shapes_cumsum = ctx.q_shapes_cumsum
-        end_inds_attns = ctx.end_inds_attns
-        start_inds_attns_cumsum = ctx.start_inds_attns_cumsum
-        end_inds_attns_all_pix = ctx.end_inds_attns_all_pix
-        start_inds_attns_cumsum_all_pixs = ctx.start_inds_attns_cumsum_all_pixs
-        end_inds_vals_all_pix = ctx.end_inds_vals_all_pix
-        start_inds_vals_cumsum_all_pixs = ctx.start_inds_vals_cumsum_all_pixs
-        gr_sizes = ctx.gr_sizes
-        gr_sizes_all_pixs = ctx.gr_sizes_all_pixs
-        start_inds_vals_cumsum_all_pixs_all_inds = ctx.start_inds_vals_cumsum_all_pixs_all_inds
+        qs, clust_ks, clust_vs, attn_w = ctx.saved_tensors
+        start_indices = ctx.start_indices
+        cl_sizes = ctx.cl_sizes
 
-        grad_qs, grad_ks, grad_vs = ENACT.backward_mhsa(grad_output, attn_w, clust_vs, ks, clust_qs, start_inds_vals_cumsum_all_pixs_all_inds, end_inds_attns_all_pix, gr_sizes_all_pixs, clust_qs.shape[1], end_inds_vals_cumsum, n_clusters_times_heads, q_shapes_cumsum, start_inds_attns_cumsum_all_pixs, gr_sizes_all_pixs, end_inds_vals_all_pix, start_inds_vals_cumsum_all_pixs)
-        return grad_qs, grad_ks, grad_vs, None, None, None
+
+        grad_qs, grad_ks, grad_vs = ENACT.backward_mhsa(grad_output, attn_w, qs, clust_ks, clust_vs, start_indices, cl_sizes, clust_ks.shape[0])
+        return grad_qs, grad_ks, grad_vs, None, None
 
 class STEFunction(torch.autograd.Function):
     @staticmethod
