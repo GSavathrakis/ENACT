@@ -49,7 +49,6 @@ class ClustAttn(nn.Module):
         entropy_step = F.conv1d(entropy.unsqueeze(1), self.Sobel_2der.to(self.device).unsqueeze(0).unsqueeze(0), padding='same').squeeze(1)
         entropy_step = STEFunction.apply(entropy_step)
         
-        
         k = ENACT.enact_cluster(entropy, entropy_step, k)
         v  = ENACT.enact_cluster(entropy, entropy_step, v)
 
@@ -72,7 +71,9 @@ class ClustAttn(nn.Module):
         attention = ATTNFunction.apply(q, k, v, start_inds, sizes)
 
         attention = attention.permute(1,2,0,3)
-        attention = self.W_o(attention.flatten(2,3).permute(1,0,2))
+        attention = attention.flatten(2,3)
+        attention = attention.permute(1,0,2)
+        attention = self.W_o(attention)
 
         
         
@@ -122,18 +123,23 @@ class ATTNFunction(torch.autograd.Function):
         ctx.start_indices = start_indices
         ctx.cl_sizes = cl_sizes
         output, attn_w = ENACT.forward_mhsa(qs, clust_ks, clust_vs, start_indices, cl_sizes)
+        #print(attn_w)
+        torch.cuda.synchronize()
+        torch.cuda.empty_cache()
         ctx.save_for_backward(qs, clust_ks, clust_vs, attn_w)
         return output
     
     @staticmethod
     @once_differentiable
     def backward(ctx, grad_output):
+
         qs, clust_ks, clust_vs, attn_w = ctx.saved_tensors
         start_indices = ctx.start_indices
         cl_sizes = ctx.cl_sizes
 
-
-        grad_qs, grad_ks, grad_vs = ENACT.backward_mhsa(grad_output, attn_w, qs, clust_ks, clust_vs, start_indices, cl_sizes, clust_ks.shape[0])
+        grad_qs, grad_ks, grad_vs = ENACT.backward_mhsa(grad_output, attn_w, qs, clust_ks, clust_vs, start_indices, cl_sizes)
+        torch.cuda.synchronize()
+        torch.cuda.empty_cache()
         return grad_qs, grad_ks, grad_vs, None, None
 
 class STEFunction(torch.autograd.Function):

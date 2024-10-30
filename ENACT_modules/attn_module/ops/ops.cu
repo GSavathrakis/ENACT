@@ -1,80 +1,142 @@
 #include "ops.h"
+#include <cmath>
 
-__global__ void attention_weights(const float* queries, const float* keys, const int n_heads, const int batch_size, const int spatial_sizes_uncl,
-                                  const int* spatial_start_ind_cl, const int* spatial_sizes_cl, const int sum_cl_pixels, const int feat_dims, float* attn_w){
+__global__ void attention_weights(const float* queries, const float* keys, const int n_heads, const int batch_size, const int spat1, const int* start_inds, const int* sizes, const int spat2, const int feature_dims, float* attn_w){
     
     int bs_n_heads = blockIdx.z;
-    int id1 = blockIdx.y*blockDim.y + threadIdx.y;
-    int id2 = blockIdx.x*blockDim.x + threadIdx.x;
-
-    if (id1 < spatial_sizes_uncl && id2 >= spatial_start_ind_cl[bs_n_heads] && id2 < spatial_sizes_cl[bs_n_heads] + spatial_start_ind_cl[bs_n_heads] && bs_n_heads < batch_size*n_heads){
-        float sum=0.;
-        for (int d=0; d<feat_dims; d++){
-            sum+=queries[bs_n_heads*spatial_sizes_uncl*feat_dims + id1*feat_dims + d]*keys[id2*feat_dims+d];
-        }
-        attn_w[bs_n_heads*spatial_sizes_uncl*sum_cl_pixels + id1*sum_cl_pixels + id2] = sum;
-    }
-}
-
-__global__ void softmax(const float* attn_ws, const int batch_size, const int n_heads, const int spatial_1, const int spatial_2, const int* spatial_start_ind_cl, const int* spatial_sizes_cl, float* soft_attn_w){
-
-    int bs_n_heads = blockIdx.y;
     int id1 = blockIdx.x*blockDim.x + threadIdx.x;
+    int id2 = blockIdx.y*blockDim.y + threadIdx.y;
 
-    if (id1 < spatial_1 && bs_n_heads<batch_size*n_heads){
+    if (bs_n_heads<batch_size*n_heads && id1<spat1 && id2 >= start_inds[bs_n_heads] && id2 < start_inds[bs_n_heads] + sizes[bs_n_heads]){
         float sum=0.;
-        for (int k=spatial_start_ind_cl[bs_n_heads]; k<spatial_start_ind_cl[bs_n_heads]+spatial_sizes_cl[bs_n_heads]; k++){
-            sum+=exp(attn_ws[bs_n_heads*spatial_1*spatial_2 + id1*spatial_2 + k]);
+        for (int d=0; d<feature_dims; d++){
+            sum += queries[bs_n_heads*spat1*feature_dims + id1*feature_dims + d]*keys[id2*feature_dims + d];
         }
-        for (int k=spatial_start_ind_cl[bs_n_heads]; k<spatial_start_ind_cl[bs_n_heads]+spatial_sizes_cl[bs_n_heads]; k++){
-            soft_attn_w[bs_n_heads*spatial_1*spatial_2 + id1*spatial_2 + k] = exp(attn_ws[bs_n_heads*spatial_1*spatial_2 + id1*spatial_2 + k])/sum;
-        }
+        attn_w[id1*spat2 + id2] = sum;
     }
 }
 
-__global__ void attention(const float* attn_w, const float* values, const int n_heads, const int batch_size, const int spatial_1, const int feat_dims, const int spatial_2, float* attn){
-    
-    int bs_n_heads = blockIdx.z;
-    int id1 = blockIdx.y*blockDim.y + threadIdx.y;
-    int id2 = blockIdx.x*blockDim.x + threadIdx.x;
+__global__ void softmax(const float* tensor, const int n_heads, const int batch_size, const int* start_inds, const int* sizes, const int spat1, const int spat2, float* soft){
 
-    if (id1 < spatial_1 && id2 < feat_dims && bs_n_heads<batch_size*n_heads){
+    int bs_n_heads = blockIdx.x;
+    int id1 = blockIdx.y*blockDim.y + threadIdx.y;
+
+    if (id1 < spat1 && bs_n_heads<batch_size*n_heads){
         float sum=0.;
-        for (int k=0; k<spatial_2; k++){
-            sum+=attn_w[bs_n_heads*spatial_1*spatial_2 + id1*spatial_2 + k]*values[id2*spatial_2 + k];
+        for (int s=start_inds[bs_n_heads]; s<start_inds[bs_n_heads]+sizes[bs_n_heads]; s++){
+            sum+=exp(tensor[id1*spat2+s]);
         }
-        attn[bs_n_heads*spatial_1*feat_dims + id1*feat_dims + id2] = sum;
+        for (int s=start_inds[bs_n_heads]; s<start_inds[bs_n_heads]+sizes[bs_n_heads]; s++){
+            soft[id1*spat2+s] = exp(tensor[id1*spat2+s])/sum;
+        }
     }
 }
 
-__global__ void dot_product(const float* tensor1, const float* tensor2, const int n_heads, const int batch_size, const int spatial_dim1, const int spatial_dim2, const int feat_dims, float* result){
-    
+__global__ void attention(const float* attn_w, const float* values, const int n_heads, const int batch_size, const int* start_inds, const int* sizes, const int spat1, const int spat2, const int feature_dims, float* attn){
+
     int bs_n_heads = blockIdx.z;
-    int id1 = blockIdx.y*blockDim.y + threadIdx.y;
-    int id2 = blockIdx.x*blockDim.x + threadIdx.x;
+    int id1 = blockIdx.x*blockDim.x + threadIdx.x; // Concerns the attn_ws
+    int id2 = blockIdx.y*blockDim.y + threadIdx.y; // Concerns the Values
 
-    if (id1<spatial_dim1 && id2<spatial_dim2 && bs_n_heads<batch_size*n_heads){
-        float sum=0;
-        for (int d=0; d<feat_dims; d++){
-            sum+=tensor1[bs_n_heads*spatial_dim1*feat_dims + id1*feat_dims + d]*tensor2[bs_n_heads*feat_dims*spatial_dim2 + id2*feat_dims + d];
+    if (bs_n_heads<batch_size*n_heads && id1<spat1 && id2<feature_dims){
+        float sum=0.;
+        for (int s=start_inds[bs_n_heads]; s<start_inds[bs_n_heads] + sizes[bs_n_heads]; s++){
+            sum+=attn_w[id1*spat2+s]*values[id2*spat2+s];
         }
-        result[bs_n_heads*spatial_dim1*spatial_dim2 + id1*spatial_dim2 + id2] = sum;
+        attn[bs_n_heads*spat1*feature_dims + id1*feature_dims + id2] = sum;
     }
 }
 
-__global__ void create_Jacobian(const float* tensor, const int Dim1, const int Dim2, const int Dim3, float* J){
-    
-    int comm_dims = blockIdx.y;
+__global__ void grad_v(const float* grad_outp, const float* soft_attn_w_tr, const int n_heads, const int batch_size, const int spat1, const int* start_inds, const int* sizes, const int spat2, const int feature_dims, float* grad_val){
+
+    int bs_n_heads = blockIdx.z;
     int id1 = blockIdx.x*blockDim.x + threadIdx.x;
+    int id2 = blockIdx.y*blockDim.y + threadIdx.y;
 
-    if (id1<Dim2 && comm_dims<Dim1){
-        for (int d=0; d<Dim3; d++){
-            if (d==id1){
-                J[comm_dims*Dim2*Dim3 + id1*Dim3 + d] = tensor[comm_dims*Dim2+id1]*(1-tensor[comm_dims*Dim2+id1]);
+    if (bs_n_heads<batch_size*n_heads && id1>=start_inds[bs_n_heads] && id1<start_inds[bs_n_heads] + sizes[bs_n_heads] && id2<feature_dims){
+        float sum=0.;
+        for (int s=0;s<spat1;s++){
+            sum+=soft_attn_w_tr[id1*spat1+s]*grad_outp[bs_n_heads*feature_dims*spat1 + id2*spat1 + s];
+        }
+        grad_val[id1*feature_dims + id2] = sum;
+    }
+}
+
+__global__ void grad_soft_attn_w(const float* grad_outp, const float* values_tr, const int n_heads, const int batch_size, const int spat1, const int* start_inds, const int* sizes, const int spat2, const int feature_dims, float* grad_soft_attn_ws){
+
+    int bs_n_heads = blockIdx.z;
+    int id1 = blockIdx.x*blockDim.x + threadIdx.x; // Concerns the grad output
+    int id2 = blockIdx.y*blockDim.y + threadIdx.y; // Concerns the values_tr
+
+    if (bs_n_heads<batch_size*n_heads && id1<spat1 && id2>=start_inds[bs_n_heads] && id2<start_inds[bs_n_heads] + sizes[bs_n_heads]){
+        float sum=0.;
+        for (int d=0;d<feature_dims;d++){
+            sum+=grad_outp[bs_n_heads*spat1*feature_dims + id1*feature_dims + d]*values_tr[id2*feature_dims + d];
+        }
+        grad_soft_attn_ws[id1*spat2 + id2] = sum;
+    }
+}
+
+__global__ void grad_attn_w(const float* grad_soft_attn_ws, const int n_heads, const int batch_size, const int spat1, const int* start_inds, const int* sizes, const int spat2, float* grad_attn_ws){
+
+    int bs_n_heads = blockIdx.z;
+    int id1 = blockIdx.x*blockDim.x + threadIdx.x;
+    int id2 = blockIdx.y*blockDim.y + threadIdx.y;
+
+    if (bs_n_heads<batch_size*n_heads && id1<spat1 && id2>=start_inds[bs_n_heads] && id2<start_inds[bs_n_heads]+sizes[bs_n_heads]){
+        float sum=0.;
+        for (int n=start_inds[bs_n_heads]; n<start_inds[bs_n_heads]+sizes[bs_n_heads]; n++){
+            if (n==id2){
+                sum+=grad_soft_attn_ws[id1*spat2+id2]*(1-grad_soft_attn_ws[id1*spat2+n]);
             }
             else{
-                J[comm_dims*Dim2*Dim3 + id1*Dim3 + d] = -tensor[comm_dims*Dim2+id1]*tensor[comm_dims*Dim2+d];
+                sum+=-grad_soft_attn_ws[id1*spat2+id2]*grad_soft_attn_ws[id1*spat2+n];
             }
         }
+        grad_attn_ws[id1*spat2+id2]=sum;
+        /*for (int m=start_inds[bs_n_heads]; m<start_inds[bs_n_heads]+sizes[bs_n_heads]; m++){
+            float sum=0.;
+            for (int n=start_inds[bs_n_heads]; n<start_inds[bs_n_heads]+sizes[bs_n_heads]; n++){
+                if (m==n){
+                    sum+=grad_soft_attn_ws[id1*spat2+m]*(1-grad_soft_attn_ws[id1*spat2+n]);
+                }
+                else{
+                    sum+=-grad_soft_attn_ws[id1*spat2+m]*grad_soft_attn_ws[id1*spat2+n];
+                }
+                __syncthreads();
+            }
+            grad_attn_ws[id1*spat2+m]=sum;
+        }*/
+    }
+
+}
+
+__global__ void grad_q(const float* grad_attn_ws, const float* keys, const int n_heads, const int batch_size, const int spat1, const int* start_inds, const int* sizes, const int spat2, const int feature_dims, float* grad_queries){
+
+    int bs_n_heads = blockIdx.z;
+    int id1 = blockIdx.x*blockDim.x + threadIdx.x; // Concerns the grad attn ws
+    int id2 = blockIdx.y*blockDim.y + threadIdx.y; // Concerns the keys
+
+    if (bs_n_heads<batch_size*n_heads && id1<spat1 && id2<feature_dims){
+        float sum=0.;
+        for (int s=start_inds[bs_n_heads]; s<start_inds[bs_n_heads]+sizes[bs_n_heads]; s++){
+            sum+=grad_attn_ws[id1*spat2+s]*keys[id2*spat2+s];
+        }
+        grad_queries[bs_n_heads*spat1*feature_dims + id1*feature_dims + id2] = sum;
+    }
+}
+
+__global__ void grad_k(const float* grad_attn_ws_tr, const float* queries, const int n_heads, const int batch_size, const int spat1, const int* start_inds, const int* sizes, const int spat2, const int feature_dims, float* grad_keys){
+
+    int bs_n_heads = blockIdx.z;
+    int id1 = blockIdx.x*blockDim.x + threadIdx.x; // Concerns the grad attn ws transposed
+    int id2 = blockIdx.y*blockDim.y + threadIdx.y; // Concerns the queries
+
+    if (bs_n_heads<batch_size*n_heads && id1>=start_inds[bs_n_heads] && id1<start_inds[bs_n_heads] + sizes[bs_n_heads] && id2<feature_dims){
+        float sum=0.;
+        for (int s=0;s<spat1;s++){
+            sum+=grad_attn_ws_tr[id1*spat1 + s]*queries[bs_n_heads*feature_dims*spat1 + id2*spat1 + s];
+        }
+        grad_keys[id1*feature_dims+id2] = sum;
     }
 }
