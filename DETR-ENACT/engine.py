@@ -40,7 +40,6 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
             n_objs.append(t['labels'].shape[0])
 
         outputs = model(samples)
-        print(outputs)
         loss_dict = criterion(outputs, targets)
         weight_dict = criterion.weight_dict
         

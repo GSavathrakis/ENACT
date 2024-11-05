@@ -6,7 +6,7 @@
 using namespace std;
 
 
-__global__ void sum_groups_kernel(const float* entropy, const float* query, float* clust_query, const int* group_sizes, const int* group_start_indices, int numCols, int numGroups) {
+__global__ void sum_groups_kernel(const float* entropy, const float* entropy_step, const float* query, float* clust_query, const int* group_sizes, const int* group_start_indices, int numCols, int numGroups) {
     int row = blockIdx.x;
     int col = threadIdx.x;
 
@@ -20,8 +20,14 @@ __global__ void sum_groups_kernel(const float* entropy, const float* query, floa
         for (int i = 0; i < group_size; i++) {
         	int ent_idx = group_start + i;
             int idx = ent_idx * numCols + col;
-            sum += exp(entropy[ent_idx])*query[idx];
-            sum_exp += exp(entropy[ent_idx]);
+            if (entropy_step[ent_idx]>0){
+                sum += exp(-entropy[ent_idx])*query[idx];
+                sum_exp += exp(-entropy[ent_idx]);
+            }
+            else{
+                sum += exp(entropy[ent_idx])*query[idx];
+                sum_exp += exp(entropy[ent_idx]);
+            }
         }
 
         int c_index = row * numCols + col;
@@ -85,7 +91,7 @@ at::Tensor SumGroups(at::Tensor entropy, at::Tensor entropy_step, at::Tensor que
     // Launch kernel
     dim3 threadsPerBlock(numCols);
     dim3 numBlocks(numGroups);
-    sum_groups_kernel<<<numBlocks, threadsPerBlock>>>(entropy.data_ptr<float>(), query.data_ptr<float>(), query_cl.data_ptr<float>(), group_sizes_gpu, group_start_indices_gpu, numCols, numGroups);
+    sum_groups_kernel<<<numBlocks, threadsPerBlock>>>(entropy.data_ptr<float>(), entropy_step.data_ptr<float>(), query.data_ptr<float>(), query_cl.data_ptr<float>(), group_sizes_gpu, group_start_indices_gpu, numCols, numGroups);
     cudaDeviceSynchronize();
 
     // Free GPU memory
