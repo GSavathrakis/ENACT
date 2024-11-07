@@ -167,7 +167,7 @@ vector<at::Tensor> backward_mhsa(at::Tensor grad_output, at::Tensor soft_attn_ws
     cudaFree(clust_sizes_gpu);
 
     return{
-        grad_queries, grad_keys, grad_values, grad_soft_attn_ws, grad_attn_ws
+        grad_queries, grad_keys, grad_values
     };
 
 }

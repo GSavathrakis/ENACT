@@ -63,10 +63,11 @@ class ClustAttn(nn.Module):
 
         n_clusters = ENACT.n_clusters(entropy_step)
 
-        sizes = np.array(n_clusters*self.n_heads).cumsum().tolist()
-        start_inds = copy.deepcopy(sizes)
+        sizes = np.array(n_clusters*self.n_heads)
+        start_inds = copy.deepcopy(sizes.cumsum().tolist())
         start_inds.insert(0,0)
         start_inds.pop()
+        sizes = sizes.tolist()
         
         attention = ATTNFunction.apply(q, k, v, start_inds, sizes)
 
@@ -123,10 +124,8 @@ class ATTNFunction(torch.autograd.Function):
         ctx.start_indices = start_indices
         ctx.cl_sizes = cl_sizes
         output, attn_w = ENACT.forward_mhsa(qs, clust_ks, clust_vs, start_indices, cl_sizes)
-        print(output)
-        #torch.cuda.synchronize()
-        #torch.cuda.empty_cache()
         ctx.save_for_backward(qs, clust_ks, clust_vs, attn_w)
+        
         return output
     
     @staticmethod
@@ -137,9 +136,8 @@ class ATTNFunction(torch.autograd.Function):
         start_indices = ctx.start_indices
         cl_sizes = ctx.cl_sizes
 
-        grad_qs, grad_ks, grad_vs, grad_soft_attn_ws, grad_attn_ws = ENACT.backward_mhsa(grad_output, attn_w, qs, clust_ks, clust_vs, start_indices, cl_sizes)
-        #torch.cuda.synchronize()
-        #torch.cuda.empty_cache()
+        grad_qs, grad_ks, grad_vs = ENACT.backward_mhsa(grad_output, attn_w, qs, clust_ks, clust_vs, start_indices, cl_sizes)
+
         return grad_qs, grad_ks, grad_vs, None, None
 
 class STEFunction(torch.autograd.Function):
