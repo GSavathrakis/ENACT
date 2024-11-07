@@ -85,12 +85,12 @@ __global__ void grad_attn_w(const float* grad_soft_attn_ws, const float* soft_at
 
     if (bs_n_heads<batch_size*n_heads && id_row<row_grad_soft_attn && id_col>=start_inds[bs_n_heads] && id_col<start_inds[bs_n_heads]+sizes[bs_n_heads]){
         float sum=0.;
-        for (int n=0;n<row_grad_soft_attn;n++){
-            if (n==id_row){
-                sum+=soft_attn_ws[id_row*col_grad_soft_attn+id_col]*(1-soft_attn_ws[n*col_grad_soft_attn+id_col])*grad_soft_attn_ws[n*col_grad_soft_attn+id_col];
+        for (int n=start_inds[bs_n_heads];n<start_inds[bs_n_heads]+sizes[bs_n_heads];n++){
+            if (n==id_col){
+                sum+=(soft_attn_ws[id_row*col_grad_soft_attn+id_col]-soft_attn_ws[id_row*col_grad_soft_attn+id_col]*soft_attn_ws[id_row*col_grad_soft_attn+n])*grad_soft_attn_ws[id_row*col_grad_soft_attn+n];
             }
             else{
-                sum+= -soft_attn_ws[id_row*col_grad_soft_attn+id_col]*soft_attn_ws[n*col_grad_soft_attn+id_col]*grad_soft_attn_ws[n*col_grad_soft_attn+id_col];
+                sum-=soft_attn_ws[id_row*col_grad_soft_attn+id_col]*soft_attn_ws[id_row*col_grad_soft_attn+n]*grad_soft_attn_ws[id_row*col_grad_soft_attn+n];
             }
         }
         grad_attn_ws[id_row*col_grad_soft_attn+id_col]=sum;

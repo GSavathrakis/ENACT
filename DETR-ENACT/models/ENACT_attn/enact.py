@@ -123,9 +123,9 @@ class ATTNFunction(torch.autograd.Function):
         ctx.start_indices = start_indices
         ctx.cl_sizes = cl_sizes
         output, attn_w = ENACT.forward_mhsa(qs, clust_ks, clust_vs, start_indices, cl_sizes)
-        #print(output)
-        torch.cuda.synchronize()
-        torch.cuda.empty_cache()
+        print(output)
+        #torch.cuda.synchronize()
+        #torch.cuda.empty_cache()
         ctx.save_for_backward(qs, clust_ks, clust_vs, attn_w)
         return output
     
@@ -138,8 +138,8 @@ class ATTNFunction(torch.autograd.Function):
         cl_sizes = ctx.cl_sizes
 
         grad_qs, grad_ks, grad_vs, grad_soft_attn_ws, grad_attn_ws = ENACT.backward_mhsa(grad_output, attn_w, qs, clust_ks, clust_vs, start_indices, cl_sizes)
-        torch.cuda.synchronize()
-        torch.cuda.empty_cache()
+        #torch.cuda.synchronize()
+        #torch.cuda.empty_cache()
         return grad_qs, grad_ks, grad_vs, None, None
 
 class STEFunction(torch.autograd.Function):

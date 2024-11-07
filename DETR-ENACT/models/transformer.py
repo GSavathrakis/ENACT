@@ -84,7 +84,6 @@ class TransformerEncoder(nn.Module):
         if self.norm is not None:
             output = self.norm(output)
 
-        print("Going to BACKWARD")
         return output
     
     def with_pos_embed(self, tensor, pos: Optional[Tensor]):
@@ -152,7 +151,7 @@ class TransformerEncoderLayer(nn.Module):
         self.normalize_before = normalize_before
     
     def forward_post(self, q, k, src, h, w, n_layer):
-        print(f"YOU ARE AT LAYER {n_layer}")
+        #print(f"YOU ARE AT LAYER {n_layer}")
         src2 = self.self_attn(q, k, src, h, w)
         #print(src2)
         src = self.norm1(src + self.dropout1(src2))
@@ -164,7 +163,7 @@ class TransformerEncoderLayer(nn.Module):
         return src
     
     def forward_pre(self, q, k, src, h, w, n_layer):
-        print(f"YOU ARE AT LAYER {n_layer}")
+        #print(f"YOU ARE AT LAYER {n_layer}")
         src = self.norm1(src)
         src2 = self.self_attn(q, k, src, h, w)
         #print(src2)
