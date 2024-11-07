@@ -75,11 +75,9 @@ class TransformerEncoder(nn.Module):
     def forward(self, src, h, w,
                 pos: Optional[Tensor] = None):
         output = src
-
-        l=0
+        
         for layer in self.layers:
-            output = layer(self.with_pos_embed(output,pos), self.with_pos_embed(output,pos), output, h, w, l)
-            l+=1
+            output = layer(self.with_pos_embed(output,pos), self.with_pos_embed(output,pos), output, h, w)
 
         if self.norm is not None:
             output = self.norm(output)
@@ -150,10 +148,8 @@ class TransformerEncoderLayer(nn.Module):
         self.activation = _get_activation_fn(activation)
         self.normalize_before = normalize_before
     
-    def forward_post(self, q, k, src, h, w, n_layer):
-        #print(f"YOU ARE AT LAYER {n_layer}")
+    def forward_post(self, q, k, src, h, w):
         src2 = self.self_attn(q, k, src, h, w)
-        #print(src2)
         src = self.norm1(src + self.dropout1(src2))
         src2 = self.activation(self.linear1(src))
         src2 = self.dropout2(src2)
@@ -162,24 +158,21 @@ class TransformerEncoderLayer(nn.Module):
 
         return src
     
-    def forward_pre(self, q, k, src, h, w, n_layer):
-        #print(f"YOU ARE AT LAYER {n_layer}")
+    def forward_pre(self, q, k, src, h, w):
         src = self.norm1(src)
         src2 = self.self_attn(q, k, src, h, w)
-        #print(src2)
         src = self.norm2(src + self.dropout1(src2))
         src2 = self.activation(self.linear1(src))
         src2 = self.dropout2(src2)
         src2 = self.linear2(src2)
-        #src = self.norm2(src + self.dropout3(src2))
 
         return src
     
-    def forward(self, q, k, src, h, w, n_layer):
+    def forward(self, q, k, src, h, w):
         if self.normalize_before==True:
-            return self.forward_pre(q, k, src, h, w, n_layer)
+            return self.forward_pre(q, k, src, h, w)
         else:
-            return self.forward_post(q, k, src, h, w, n_layer)
+            return self.forward_post(q, k, src, h, w)
 
 
 class TransformerDecoderLayer(nn.Module):
