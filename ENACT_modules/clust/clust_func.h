@@ -4,11 +4,7 @@
 #include <torch/torch.h>
 using namespace std;
 
-// Declaration of the function that will be defined in kernels.cu
-at::Tensor SumGroups(at::Tensor entropy, at::Tensor entropy_step, at::Tensor query);
-
-// Declaration of the function that will be defined in functions.cpp
-list<at::Tensor> enact_cluster(at::Tensor entropy, at::Tensor entropy_step, at::Tensor query);
-list<int> n_clusters(at::Tensor entropy_step);
+vector<at::Tensor> enact_cluster_forward(at::Tensor Keys, at::Tensor Values, at::Tensor Entropy, at::Tensor Entropy_step, at::Tensor start_inds, at::Tensor region_lengths);
+vector<at::Tensor> enact_cluster_backward(at::Tensor grad_Keys_cl, at::Tensor grad_Values_cl, at::Tensor Keys, at::Tensor Values, at::Tensor Entropy, at::Tensor Entropy_step, at::Tensor start_inds, at::Tensor region_lengths);
 
 #endif // FUNCTIONS_H

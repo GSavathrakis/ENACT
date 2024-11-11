@@ -47,29 +47,44 @@ class ClustAttn(nn.Module):
         entropy = F.conv1d(entropy.unsqueeze(1), self.gaussian_kernel.to(self.device).unsqueeze(0).unsqueeze(0), padding='same').squeeze(1)
         
         entropy_step = F.conv1d(entropy.unsqueeze(1), self.Sobel_2der.to(self.device).unsqueeze(0).unsqueeze(0), padding='same').squeeze(1)
-        entropy_step = STEFunction.apply(entropy_step)
-        
-        k = ENACT.enact_cluster(entropy, entropy_step, k)
-        v  = ENACT.enact_cluster(entropy, entropy_step, v)
+        entropy_step = (entropy_step > 0).to(torch.float32)
+        entropy_step = (entropy_step*2-1).to(torch.int32)
+
+        entropy_step = entropy_step.flatten(0,1)
+        entropy = entropy.flatten(0,1)
+        k = k.flatten(0,1)
+        v = v.flatten(0,1)
+
+        aux = torch.sign(entropy_step).to('cpu')  # Convert elements to +1 or -1 based on their sign
+        aux = aux[1:] != aux[:-1]  # Identify where sign changes
+        start_indices = torch.cat((torch.tensor([0]), torch.nonzero(aux, as_tuple=True)[0] + 1))
+        start_indices = torch.unique(torch.sort(torch.cat((torch.Tensor([spat]*(bs-1))*torch.linspace(1,bs-1,bs-1), start_indices)))[0])
+        region_lengths = torch.diff(torch.cat((start_indices, torch.tensor([entropy_step.size(0)]))))
+
+        start_indices = start_indices.to(torch.int32).to(self.device)
+        region_lengths = region_lengths.to(torch.int32).to(self.device)
+
+        k_cl, v_cl = CLUSTFunction.apply(k, v, entropy, entropy_step, start_indices, region_lengths)
 
         q = self.W_q(q)
-        k = self.W_k(torch.cat((k), dim=0).to(self.device))
-        v  = self.W_v(torch.cat((v), dim=0).to(self.device))
+        k_cl = self.W_k(k_cl)
+        v_cl  = self.W_v(v_cl)
         
 
         q = q.view(bs, spat, self.n_heads, feats//self.n_heads).permute(2, 0, 1, 3)
-        k = k.view(-1, self.n_heads, feats//self.n_heads).permute(1, 0, 2).flatten(0,1)
-        v  = v.view(-1, self.n_heads, feats//self.n_heads).permute(1, 0, 2).flatten(0,1)
+        k_cl = k_cl.view(-1, self.n_heads, feats//self.n_heads).permute(1, 0, 2).flatten(0,1)
+        v_cl = v_cl.view(-1, self.n_heads, feats//self.n_heads).permute(1, 0, 2).flatten(0,1)
 
-        n_clusters = ENACT.n_clusters(entropy_step)
+        #print(q.shape, k_cl.shape, v_cl.shape)
 
-        sizes = np.array(n_clusters*self.n_heads)
+        sizes = np.array(region_lengths.tolist()*self.n_heads)
         start_inds = copy.deepcopy(sizes.cumsum().tolist())
         start_inds.insert(0,0)
         start_inds.pop()
         sizes = sizes.tolist()
         
-        attention = ATTNFunction.apply(q, k, v, start_inds, sizes)
+        attention = ATTNFunction.apply(q, k_cl, v_cl, start_inds, sizes)
+        #print(attention.shape)
 
         attention = attention.permute(1,2,0,3)
         attention = attention.flatten(2,3)
@@ -116,6 +131,19 @@ class ClustAttn(nn.Module):
 
         return gaussian_kernel
 
+class CLUSTFunction(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, k, v, ent, ent_step, st_inds, reg_l):
+        ctx.save_for_backward(k, v, ent, ent_step, st_inds, reg_l)
+        k_cl, v_cl = ENACT.enact_cluster_forward(k, v, ent, ent_step, st_inds, reg_l)
+        return k_cl, v_cl
+    
+    @staticmethod
+    @once_differentiable
+    def backward(ctx, grad_k_cl, grad_v_cl):
+        k, v, ent, ent_step, st_inds, reg_l = ctx.saved_tensors
+        grad_k, grad_v, grad_entr = ENACT.enact_cluster_backward(grad_k_cl, grad_v_cl, k, v, ent, ent_step, st_inds, reg_l)
+        return grad_k, grad_v, grad_entr, None, None, None
 
 class ATTNFunction(torch.autograd.Function):
     @staticmethod
@@ -125,7 +153,7 @@ class ATTNFunction(torch.autograd.Function):
         ctx.cl_sizes = cl_sizes
         output, attn_w = ENACT.forward_mhsa(qs, clust_ks, clust_vs, start_indices, cl_sizes)
         ctx.save_for_backward(qs, clust_ks, clust_vs, attn_w)
-        
+
         return output
     
     @staticmethod
@@ -139,12 +167,3 @@ class ATTNFunction(torch.autograd.Function):
         grad_qs, grad_ks, grad_vs = ENACT.backward_mhsa(grad_output, attn_w, qs, clust_ks, clust_vs, start_indices, cl_sizes)
 
         return grad_qs, grad_ks, grad_vs, None, None
-
-class STEFunction(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, input):
-        return (input > 0).float()
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        return F.hardtanh(grad_output)

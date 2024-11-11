@@ -5,99 +5,101 @@
 #include "clust_func.h"
 using namespace std;
 
+__global__ void clustering(const float* Keys, const float* Values, const float* entropy, const int* entropy_step, const int* start_inds, const int* sizes, const int num_clusters, const int feature_dims, float* Keys_cl, float* Values_cl){
 
-__global__ void sum_groups_kernel(const float* entropy, const float* entropy_step, const float* query, float* clust_query, const int* group_sizes, const int* group_start_indices, int numCols, int numGroups) {
-    int row = blockIdx.x;
-    int col = threadIdx.x;
+    int regions = blockIdx.x*blockDim.x+threadIdx.x;
+    int id_feat = blockIdx.y;
 
-    if (row < numGroups && col < numCols) {
-        int group_start = group_start_indices[row];
-        int group_size = group_sizes[row];
-
-        float sum = 0.0;
-        float sum_exp = 0.0;
-        
-        for (int i = 0; i < group_size; i++) {
-        	int ent_idx = group_start + i;
-            int idx = ent_idx * numCols + col;
-            if (entropy_step[ent_idx]>0){
-                sum += exp(-entropy[ent_idx])*query[idx];
-                sum_exp += exp(-entropy[ent_idx]);
+    if (regions<num_clusters && id_feat<feature_dims){
+        float sum_k=0.;
+        float sum_v=0.;
+        float sum_exp=0.;
+        for (int s=start_inds[regions];s<start_inds[regions]+sizes[regions];s++){
+            if (entropy_step[s]<0){
+                sum_k+=exp(entropy[s])*Keys[s*feature_dims+id_feat];
+                sum_v+=exp(entropy[s])*Values[s*feature_dims+id_feat];
             }
             else{
-                sum += exp(entropy[ent_idx])*query[idx];
-                sum_exp += exp(entropy[ent_idx]);
+                sum_k-=exp(entropy[s])*Keys[s*feature_dims+id_feat];
+                sum_v-=exp(entropy[s])*Values[s*feature_dims+id_feat];
+            }
+            sum_exp+=exp(entropy[s]);
+        }
+        Keys_cl[regions*feature_dims+id_feat]=sum_k/sum_exp;
+        Values_cl[regions*feature_dims+id_feat]=sum_v/sum_exp;
+    }
+}
+
+__global__ void grad_clustering(const float* grad_Keys_cl, const float* grad_Values_cl, const float* Keys, const float* Values, const float* entropy, const int* entropy_step, const int* start_inds, const int* sizes, const int num_clusters, const int feature_dims, float* grad_Keys, float* grad_Values, float* grad_entropy){
+
+    int regions = blockIdx.x*blockDim.x+threadIdx.x;
+    int id_feat = blockIdx.y;
+
+    if (regions<num_clusters && id_feat<feature_dims){
+        float sum_exp=0.;
+        float sum_k=0.;
+        float sum_v=0.;
+        for (int s=start_inds[regions];s<start_inds[regions]+sizes[regions];s++){
+            sum_exp+=exp(entropy[s]);
+            sum_k+=exp(entropy[s])*Keys[s*feature_dims+id_feat];
+            sum_v+=exp(entropy[s])*Values[s*feature_dims+id_feat];
+        }
+        
+        for (int s=start_inds[regions];s<start_inds[regions]+sizes[regions];s++){
+            if (entropy_step[s]<0){
+                grad_Keys[s*feature_dims+id_feat]=grad_Keys_cl[regions*feature_dims+id_feat]*exp(entropy[s])/sum_exp;
+                grad_Values[s*feature_dims+id_feat]=grad_Values_cl[regions*feature_dims+id_feat]*exp(entropy[s])/sum_exp;
+                grad_entropy[s*feature_dims+id_feat]=-(1./pow(sum_exp,2))*exp(entropy[s])*(grad_Keys_cl[regions*feature_dims+id_feat]*sum_k+grad_Values_cl[regions*feature_dims+id_feat]*sum_v)+(1./sum_exp)*(grad_Keys_cl[regions*feature_dims+id_feat]*exp(entropy[s])*Keys[s*feature_dims+id_feat]+grad_Values_cl[regions*feature_dims+id_feat]*exp(entropy[s])*Values[s*feature_dims+id_feat]);     
+            }
+            else{
+                grad_Keys[s*feature_dims+id_feat]=-grad_Keys_cl[regions*feature_dims+id_feat]*exp(entropy[s])/sum_exp;
+                grad_Values[s*feature_dims+id_feat]=-grad_Values_cl[regions*feature_dims+id_feat]*exp(entropy[s])/sum_exp;
+                grad_entropy[s*feature_dims+id_feat]=(1./pow(sum_exp,2))*exp(entropy[s])*(grad_Keys_cl[regions*feature_dims+id_feat]*sum_k+grad_Values_cl[regions*feature_dims+id_feat]*sum_v)-(1./sum_exp)*(grad_Keys_cl[regions*feature_dims+id_feat]*exp(entropy[s])*Keys[s*feature_dims+id_feat]+grad_Values_cl[regions*feature_dims+id_feat]*exp(entropy[s])*Values[s*feature_dims+id_feat]);
             }
         }
-
-        int c_index = row * numCols + col;
-        clust_query[c_index] = sum/sum_exp;
     }
+
 }
 
-/*
-__global__ void sum_groups_kernel(const float* entropy, const float* query, float* clust_query, const int* group_sizes, const int* group_start_indices, int numDims, int numPixels){
-    int row = blockIdx.x;
-    int col = threadIdx.x;
 
-    if (row < numPixels && col < numDims){
-        float sum = 0.0;
-        float sum_exp = 0.0;
+vector<at::Tensor> enact_cluster_forward(at::Tensor Keys, at::Tensor Values, at::Tensor Entropy, at::Tensor Entropy_step, at::Tensor start_inds, at::Tensor region_lengths){
+    
+    at::Tensor Keys_cl = at::zeros({region_lengths.size(0), Keys.size(1)}, Keys.options());
+    at::Tensor Values_cl = at::zeros({region_lengths.size(0), Values.size(1)}, Values.options());
 
-        for (int i=0; i<)
-    }
-}
-*/
-at::Tensor SumGroups(at::Tensor entropy, at::Tensor entropy_step, at::Tensor query) {
-    int numRows = query.size(0);
-    int numCols = query.size(1);
+    int n_threads_reg = 1024;
 
-    // Convert input tensors to CPU for group identification
-    auto entropy_step_cpu = entropy_step.to(torch::kCPU);
-    const float* entropy_step_ptr = entropy_step_cpu.data_ptr<float>();
+    int n_blocks_reg = (region_lengths.size(0) + n_threads_reg - 1)/n_threads_reg;
+    int n_blocks_ft = Keys.size(1);
 
-    vector<int> group_sizes;
-    vector<int> group_start_indices;
-    int current_group_size = 1;
-    int current_group_start = 0;
-
-    for (int i = 1; i < numRows; i++) {
-        if (entropy_step_ptr[i] == entropy_step_ptr[i - 1]) {
-            current_group_size++;
-        } else {
-            group_sizes.push_back(current_group_size);
-            group_start_indices.push_back(current_group_start);
-            current_group_size = 1;
-            current_group_start = i;
-        }
-    }
-
-    group_sizes.push_back(current_group_size);
-    group_start_indices.push_back(current_group_start);
-
-    int numGroups = group_sizes.size();
-
-    // Allocate and copy group_sizes and group_start_indices to the GPU
-    int* group_sizes_gpu;
-    int* group_start_indices_gpu;
-    cudaMalloc(&group_sizes_gpu, numGroups * sizeof(int));
-    cudaMalloc(&group_start_indices_gpu, numGroups * sizeof(int));
-    cudaMemcpy(group_sizes_gpu, group_sizes.data(), numGroups * sizeof(int), cudaMemcpyHostToDevice);
-    cudaMemcpy(group_start_indices_gpu, group_start_indices.data(), numGroups * sizeof(int), cudaMemcpyHostToDevice);
-
-    // Create output tensor on the GPU
-    at::Tensor query_cl = at::zeros({numGroups, numCols}, query.options());
-
-    // Launch kernel
-    dim3 threadsPerBlock(numCols);
-    dim3 numBlocks(numGroups);
-    sum_groups_kernel<<<numBlocks, threadsPerBlock>>>(entropy.data_ptr<float>(), entropy_step.data_ptr<float>(), query.data_ptr<float>(), query_cl.data_ptr<float>(), group_sizes_gpu, group_start_indices_gpu, numCols, numGroups);
+    dim3 numBlocks(n_blocks_reg, n_blocks_ft);
+    dim3 threadsPerBlock(n_threads_reg);
+    clustering<<<numBlocks, threadsPerBlock>>>(Keys.data_ptr<float>(), Values.data_ptr<float>(), Entropy.data_ptr<float>(), Entropy_step.data_ptr<int>(), start_inds.data_ptr<int>(), region_lengths.data_ptr<int>(), region_lengths.size(0), Keys.size(1), Keys_cl.data_ptr<float>(), Values_cl.data_ptr<float>());
     cudaDeviceSynchronize();
 
-    // Free GPU memory
-    cudaFree(group_sizes_gpu);
-    cudaFree(group_start_indices_gpu);
+    return{
+        Keys_cl, Values_cl
+    };
+}
 
-    return query_cl;
+vector<at::Tensor> enact_cluster_backward(at::Tensor grad_Keys_cl, at::Tensor grad_Values_cl, at::Tensor Keys, at::Tensor Values, at::Tensor Entropy, at::Tensor Entropy_step, at::Tensor start_inds, at::Tensor region_lengths){
 
+    at::Tensor grad_Keys    = at::zeros({Entropy.size(0),   grad_Keys_cl.size(1)},   grad_Keys_cl.options());
+    at::Tensor grad_Values  = at::zeros({Entropy.size(0), grad_Values_cl.size(1)}, grad_Values_cl.options());
+    at::Tensor grad_entropy = at::zeros({Entropy.size(0), grad_Values_cl.size(1)},        Entropy.options());
+
+    int n_threads_reg = 1024;
+
+    int n_blocks_reg = (grad_Keys_cl.size(0) + n_threads_reg - 1)/n_threads_reg;
+    int n_blocks_ft = grad_Keys_cl.size(1);
+
+    dim3 numBlocks(n_blocks_reg, n_blocks_ft);
+    dim3 threadsPerBlock(n_threads_reg);
+    grad_clustering<<<numBlocks, threadsPerBlock>>>(grad_Keys_cl.data_ptr<float>(), grad_Values_cl.data_ptr<float>(), Keys.data_ptr<float>(), Values.data_ptr<float>(), Entropy.data_ptr<float>(), Entropy_step.data_ptr<int>(), start_inds.data_ptr<int>(), region_lengths.data_ptr<int>(), region_lengths.size(0), Keys.size(1), grad_Keys.data_ptr<float>(), grad_Values.data_ptr<float>(), grad_entropy.data_ptr<float>());
+    cudaDeviceSynchronize();
+    grad_entropy=grad_entropy.sum(-1);
+
+    return{
+        grad_Keys, grad_Values, grad_entropy
+    };
 }
