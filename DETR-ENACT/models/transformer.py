@@ -149,6 +149,7 @@ class TransformerEncoderLayer(nn.Module):
         self.normalize_before = normalize_before
     
     def forward_post(self, q, k, src, h, w):
+        
         src2 = self.self_attn(q, k, src, h, w)
         src = self.norm1(src + self.dropout1(src2))
         src2 = self.activation(self.linear1(src))

@@ -46,7 +46,7 @@ class ClustAttn(nn.Module):
         entropy = -prob_k*torch.log(prob_k)/torch.log(self.base.to(self.device))
         entropy = F.conv1d(entropy.unsqueeze(1), self.gaussian_kernel.to(self.device).unsqueeze(0).unsqueeze(0), padding='same').squeeze(1)
         
-        entropy_step = F.conv1d(entropy.unsqueeze(1), self.Sobel_2der.to(self.device).unsqueeze(0).unsqueeze(0), padding='same').squeeze(1)
+        entropy_step = F.conv1d(entropy.unsqueeze(1), self.Sobel_2der.to(self.device).unsqueeze(0).unsqueeze(0), padding='same').squeeze(1).to('cpu')
         entropy_step = (entropy_step > 0).to(torch.float32)
         entropy_step = (entropy_step*2-1).to(torch.int32)
 
@@ -55,41 +55,49 @@ class ClustAttn(nn.Module):
         k = k.flatten(0,1)
         v = v.flatten(0,1)
 
-        aux = torch.sign(entropy_step).to('cpu')  # Convert elements to +1 or -1 based on their sign
+        aux = torch.sign(entropy_step)  # Convert elements to +1 or -1 based on their sign
         aux = aux[1:] != aux[:-1]  # Identify where sign changes
         start_indices = torch.cat((torch.tensor([0]), torch.nonzero(aux, as_tuple=True)[0] + 1))
         start_indices = torch.unique(torch.sort(torch.cat((torch.Tensor([spat]*(bs-1))*torch.linspace(1,bs-1,bs-1), start_indices)))[0])
         region_lengths = torch.diff(torch.cat((start_indices, torch.tensor([entropy_step.size(0)]))))
 
-        start_indices = start_indices.to(torch.int32).to(self.device)
-        region_lengths = region_lengths.to(torch.int32).to(self.device)
+        entropy_step = entropy_step.to(torch.int32).tolist()
+        start_indices = start_indices.to(torch.int32).tolist()
+        region_lengths = region_lengths.to(torch.int32).tolist()
 
-        k_cl, v_cl = CLUSTFunction.apply(k, v, entropy, entropy_step, start_indices, region_lengths)
-
-        q = self.W_q(q)
-        k_cl = self.W_k(k_cl)
-        v_cl  = self.W_v(v_cl)
-        
-
-        q = q.view(bs, spat, self.n_heads, feats//self.n_heads).permute(2, 0, 1, 3)
-        k_cl = k_cl.view(-1, self.n_heads, feats//self.n_heads).permute(1, 0, 2).flatten(0,1)
-        v_cl = v_cl.view(-1, self.n_heads, feats//self.n_heads).permute(1, 0, 2).flatten(0,1)
-
-        #print(q.shape, k_cl.shape, v_cl.shape)
-
-        sizes = np.array(region_lengths.tolist()*self.n_heads)
+        sizes = np.array(region_lengths*self.n_heads)
         start_inds = copy.deepcopy(sizes.cumsum().tolist())
         start_inds.insert(0,0)
         start_inds.pop()
         sizes = sizes.tolist()
         
-        attention = ATTNFunction.apply(q, k_cl, v_cl, start_inds, sizes)
-        #print(attention.shape)
+        try:
+            k, v = CLUSTFunction.apply(k, v, entropy, entropy_step, start_indices, region_lengths)
 
-        attention = attention.permute(1,2,0,3)
-        attention = attention.flatten(2,3)
-        attention = attention.permute(1,0,2)
-        attention = self.W_o(attention)
+            q = self.W_q(q)
+            k = self.W_k(k)
+            v  = self.W_v(v)
+            
+
+            q = q.view(bs, spat, self.n_heads, feats//self.n_heads).permute(2, 0, 1, 3)
+            k = k.view(-1, self.n_heads, feats//self.n_heads).permute(1, 0, 2).flatten(0,1)
+            v = v.view(-1, self.n_heads, feats//self.n_heads).permute(1, 0, 2).flatten(0,1)
+            
+            attention = ATTNFunction.apply(q, k, v, start_inds, sizes)
+
+            attention = attention.permute(1,2,0,3)
+            attention = attention.flatten(2,3)
+            attention = attention.permute(1,0,2)
+            attention = self.W_o(attention)
+        
+        except RuntimeError:
+            print(len(entropy_step), len(start_indices), len(region_lengths))
+            print(entropy_step)
+            print(start_indices)
+            print(region_lengths)
+            print(len(sizes), len(start_inds))
+            print(start_inds)
+            print(sizes)
 
         
         
@@ -134,14 +142,20 @@ class ClustAttn(nn.Module):
 class CLUSTFunction(torch.autograd.Function):
     @staticmethod
     def forward(ctx, k, v, ent, ent_step, st_inds, reg_l):
-        ctx.save_for_backward(k, v, ent, ent_step, st_inds, reg_l)
+        ctx.ent_step = ent_step
+        ctx.st_inds = st_inds
+        ctx.reg_l = reg_l
+        ctx.save_for_backward(k, v, ent)
         k_cl, v_cl = ENACT.enact_cluster_forward(k, v, ent, ent_step, st_inds, reg_l)
         return k_cl, v_cl
     
     @staticmethod
     @once_differentiable
     def backward(ctx, grad_k_cl, grad_v_cl):
-        k, v, ent, ent_step, st_inds, reg_l = ctx.saved_tensors
+        k, v, ent = ctx.saved_tensors
+        ent_step = ctx.ent_step
+        st_inds = ctx.st_inds
+        reg_l = ctx.reg_l
         grad_k, grad_v, grad_entr = ENACT.enact_cluster_backward(grad_k_cl, grad_v_cl, k, v, ent, ent_step, st_inds, reg_l)
         return grad_k, grad_v, grad_entr, None, None, None
 
