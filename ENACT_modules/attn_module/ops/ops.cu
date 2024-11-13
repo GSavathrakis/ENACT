@@ -80,14 +80,14 @@ __global__ void grad_soft_attn_w(const float* grad_outp, const float* values_tr,
 __global__ void grad_attn_w(const float* grad_soft_attn_ws, const float* soft_attn_ws, const int n_heads, const int batch_size, const int* start_inds, const int* sizes, const int row_grad_soft_attn, const int col_grad_soft_attn, float* grad_attn_ws){
 
     int bs_n_heads = blockIdx.z;
-    int id_row = blockIdx.x*blockDim.x+threadIdx.x;
-    int id_col = blockIdx.y*blockDim.y+threadIdx.y;
+    int id_col = blockIdx.x*blockDim.x+threadIdx.x;
+    int id_row = blockIdx.y*blockDim.y+threadIdx.y;
 
     if (bs_n_heads<batch_size*n_heads && id_row<row_grad_soft_attn && id_col>=start_inds[bs_n_heads] && id_col<start_inds[bs_n_heads]+sizes[bs_n_heads]){
         float sum=0.;
         for (int n=start_inds[bs_n_heads];n<start_inds[bs_n_heads]+sizes[bs_n_heads];n++){
             if (n==id_col){
-                sum+=(soft_attn_ws[id_row*col_grad_soft_attn+id_col]-soft_attn_ws[id_row*col_grad_soft_attn+id_col]*soft_attn_ws[id_row*col_grad_soft_attn+n])*grad_soft_attn_ws[id_row*col_grad_soft_attn+n];
+                sum+=soft_attn_ws[id_row*col_grad_soft_attn+id_col]*(1-soft_attn_ws[id_row*col_grad_soft_attn+n])*grad_soft_attn_ws[id_row*col_grad_soft_attn+n];
             }
             else{
                 sum-=soft_attn_ws[id_row*col_grad_soft_attn+id_col]*soft_attn_ws[id_row*col_grad_soft_attn+n]*grad_soft_attn_ws[id_row*col_grad_soft_attn+n];

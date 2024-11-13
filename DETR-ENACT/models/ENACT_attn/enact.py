@@ -7,6 +7,7 @@ import copy
 import ENACT
 import numpy as np
 import matplotlib.pyplot as plt
+import time
 
 
 
@@ -41,6 +42,7 @@ class ClustAttn(nn.Module):
         k = k.permute(1,0,2) # New shape: BS x spatial x feature
         v = v.permute(1,0,2) # New shape: BS x spatial x feature
         bs, spat, feats = k.shape
+        start_time = time.time()
         prob_k = F.softmax(self.W_prob(k).squeeze(-1), -1) + 1e-8
 
         entropy = -prob_k*torch.log(prob_k)/torch.log(self.base.to(self.device))
@@ -71,36 +73,38 @@ class ClustAttn(nn.Module):
         start_inds.pop()
         sizes = sizes.tolist()
         
-        try:
-            k, v = CLUSTFunction.apply(k, v, entropy, entropy_step, start_indices, region_lengths)
+        
+        k, v = CLUSTFunction.apply(k, v, entropy, entropy_step, start_indices, region_lengths)
+        """
+        
+        k = k.flatten(0,1)
+        v = v.flatten(0,1)
+        
+        sizes = np.array([spat]*bs*self.n_heads)
+        start_inds = copy.deepcopy(sizes.cumsum().tolist())
+        start_inds.insert(0,0)
+        start_inds.pop()
+        sizes = sizes.tolist()
+        """
 
-            q = self.W_q(q)
-            k = self.W_k(k)
-            v  = self.W_v(v)
+        q = self.W_q(q)
+        k = self.W_k(k)
+        v  = self.W_v(v)
+        
+        q = q.view(bs, spat, self.n_heads, feats//self.n_heads).permute(2, 0, 1, 3)
+        k = k.view(-1, self.n_heads, feats//self.n_heads).permute(1, 0, 2).flatten(0,1)
+        v = v.view(-1, self.n_heads, feats//self.n_heads).permute(1, 0, 2).flatten(0,1)
             
-
-            q = q.view(bs, spat, self.n_heads, feats//self.n_heads).permute(2, 0, 1, 3)
-            k = k.view(-1, self.n_heads, feats//self.n_heads).permute(1, 0, 2).flatten(0,1)
-            v = v.view(-1, self.n_heads, feats//self.n_heads).permute(1, 0, 2).flatten(0,1)
-            
-            attention = ATTNFunction.apply(q, k, v, start_inds, sizes)
-
-            attention = attention.permute(1,2,0,3)
-            attention = attention.flatten(2,3)
-            attention = attention.permute(1,0,2)
-            attention = self.W_o(attention)
+        attention = ATTNFunction.apply(q, k, v, start_inds, sizes)
         
-        except RuntimeError:
-            print(len(entropy_step), len(start_indices), len(region_lengths))
-            print(entropy_step)
-            print(start_indices)
-            print(region_lengths)
-            print(len(sizes), len(start_inds))
-            print(start_inds)
-            print(sizes)
 
-        
-        
+        attention = attention.permute(1,2,0,3)
+        attention = attention.flatten(2,3)
+        attention = attention.permute(1,0,2)
+        attention = self.W_o(attention)
+        end_time = time.time()
+        #print(f"Time lapsed forward:{end_time-start_time}")
+
         return attention
         
     @staticmethod
@@ -165,7 +169,9 @@ class ATTNFunction(torch.autograd.Function):
         
         ctx.start_indices = start_indices
         ctx.cl_sizes = cl_sizes
+        
         output, attn_w = ENACT.forward_mhsa(qs, clust_ks, clust_vs, start_indices, cl_sizes)
+        
         ctx.save_for_backward(qs, clust_ks, clust_vs, attn_w)
 
         return output
@@ -177,7 +183,8 @@ class ATTNFunction(torch.autograd.Function):
         qs, clust_ks, clust_vs, attn_w = ctx.saved_tensors
         start_indices = ctx.start_indices
         cl_sizes = ctx.cl_sizes
-
+        #start_time = time.time()
         grad_qs, grad_ks, grad_vs = ENACT.backward_mhsa(grad_output, attn_w, qs, clust_ks, clust_vs, start_indices, cl_sizes)
-
+        #end_time = time.time()
+        #print(f"Time lapsed backward:{end_time-start_time}")
         return grad_qs, grad_ks, grad_vs, None, None

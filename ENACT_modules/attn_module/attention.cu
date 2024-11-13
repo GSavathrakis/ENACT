@@ -93,10 +93,25 @@ vector<at::Tensor> backward_mhsa(at::Tensor grad_output, at::Tensor soft_attn_ws
     cudaMemcpy(clust_start_inds_gpu, clust_start_inds.data(), clust_start_inds.size() * sizeof(int), cudaMemcpyHostToDevice);
     cudaMemcpy(clust_sizes_gpu, clust_sizes.data(), clust_sizes.size() * sizeof(int), cudaMemcpyHostToDevice);
 
+    //cudaEvent_t start, stop;
+    //float milliseconds;
+    //cudaEventCreate(&start);
+    //cudaEventCreate(&stop);
+
+    //cudaEventRecord(start);
     dim3 numBlocks_grad_v(n_blocks_grad_v_x, n_blocks_grad_v_y, batch_grad_v);
     dim3 threadsPerBlock_grad_v(n_threads_grad_v_x, n_threads_grad_v_y);
     grad_v<<<numBlocks_grad_v, threadsPerBlock_grad_v>>>(soft_attn_ws.data_ptr<float>(), grad_output.data_ptr<float>(), Queries.size(0), Queries.size(1), clust_start_inds_gpu, clust_sizes_gpu, soft_attn_ws.size(1), grad_output.size(1), grad_output.size(2), grad_values.data_ptr<float>());
     cudaDeviceSynchronize();
+    //cudaEventRecord(stop);
+
+    /*cudaEventSynchronize(stop);  // Wait for the stop event to complete
+    milliseconds = 0;
+    cudaEventElapsedTime(&milliseconds, start, stop);
+    cout << "grad values calculation time: " << milliseconds << " ms" << endl;
+
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);*/
 
     at::Tensor grad_soft_attn_ws = at::zeros({grad_output.size(1), Values.size(0)}, grad_output.options());
     
@@ -107,25 +122,50 @@ vector<at::Tensor> backward_mhsa(at::Tensor grad_output, at::Tensor soft_attn_ws
     int n_blocks_grad_soft_attn_w_y = (Values.size(0) + n_threads_grad_soft_attn_w_y - 1)/n_threads_grad_soft_attn_w_y;
     int batch_grad_soft_attn_w = grad_output.size(0);
 
+    //cudaEventCreate(&start);
+    //cudaEventCreate(&stop);
+
+    //cudaEventRecord(start);
     dim3 numBlocks_grad_soft_attn_w(n_blocks_grad_soft_attn_w_x, n_blocks_grad_soft_attn_w_y, batch_grad_soft_attn_w);
     dim3 threadsPerBlock_grad_soft_attn_w(n_threads_grad_soft_attn_w_x, n_threads_grad_soft_attn_w_y);
     grad_soft_attn_w<<<numBlocks_grad_soft_attn_w, threadsPerBlock_grad_soft_attn_w>>>(grad_output.data_ptr<float>(), Values.data_ptr<float>(), Queries.size(0), Queries.size(1), Queries.size(2), clust_start_inds_gpu, clust_sizes_gpu, Values.size(0), Queries.size(3), grad_soft_attn_ws.data_ptr<float>());
     cudaDeviceSynchronize();
+    //cudaEventRecord(stop);
+
+    /*cudaEventSynchronize(stop);  // Wait for the stop event to complete
+    milliseconds = 0;
+    cudaEventElapsedTime(&milliseconds, start, stop);
+    cout << "grad soft attention weights calculation time: " << milliseconds << " ms" << endl;
+
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);*/
 
     at::Tensor grad_attn_ws = at::zeros({grad_output.size(1), Values.size(0)}, grad_output.options());
 
     int n_threads_grad_attn_w_x = 32;
     int n_threads_grad_attn_w_y = 32;
 
-    int n_blocks_grad_attn_w_x = (grad_output.size(1) + n_threads_grad_attn_w_x - 1)/n_threads_grad_attn_w_x;
-    int n_blocks_grad_attn_w_y = (Values.size(0) + n_threads_grad_attn_w_y - 1)/n_threads_grad_attn_w_y;
+    int n_blocks_grad_attn_w_x = (Values.size(0) + n_threads_grad_attn_w_x - 1)/n_threads_grad_attn_w_x;
+    int n_blocks_grad_attn_w_y = (grad_output.size(1) + n_threads_grad_attn_w_y - 1)/n_threads_grad_attn_w_y;
     int batch_grad_attn_w = grad_output.size(0);
 
+    //cudaEventCreate(&start);
+    //cudaEventCreate(&stop);
+
+    //cudaEventRecord(start);
     dim3 numBlocks_grad_attn_w(n_blocks_grad_attn_w_x, n_blocks_grad_attn_w_y, batch_grad_attn_w);
     dim3 threadsPerBlock_grad_attn_w(n_threads_grad_attn_w_x, n_threads_grad_attn_w_y);
     grad_attn_w<<<numBlocks_grad_attn_w, threadsPerBlock_grad_attn_w>>>(grad_soft_attn_ws.data_ptr<float>(), soft_attn_ws.data_ptr<float>(), Queries.size(0), Queries.size(1), clust_start_inds_gpu, clust_sizes_gpu, Queries.size(2), Values.size(0), grad_attn_ws.data_ptr<float>());
     cudaDeviceSynchronize();
-    //delete grad_soft_attn_ws;
+    //cudaEventRecord(stop);
+
+    /*cudaEventSynchronize(stop);  // Wait for the stop event to complete
+    milliseconds = 0;
+    cudaEventElapsedTime(&milliseconds, start, stop);
+    cout << "grad attention weights calculation time: " << milliseconds << " ms" << endl;
+
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);*/
 
     at::Tensor grad_queries = at::zeros({grad_output.size(0), grad_output.size(1), grad_output.size(2)}, grad_output.options());
 
@@ -136,12 +176,25 @@ vector<at::Tensor> backward_mhsa(at::Tensor grad_output, at::Tensor soft_attn_ws
     int n_blocks_grad_q_y = (Keys.size(1) + n_threads_grad_q_y - 1)/n_threads_grad_q_y;
     int batch_grad_q = grad_output.size(0);
 
+    //cudaEventCreate(&start);
+    //cudaEventCreate(&stop);
+
+    //cudaEventRecord(start);
     dim3 numBlocks_grad_q(n_blocks_grad_q_x, n_blocks_grad_q_y, batch_grad_q);
     dim3 threadsPerBlock_grad_q(n_threads_grad_q_x, n_threads_grad_q_y);
     grad_q<<<numBlocks_grad_q, threadsPerBlock_grad_q>>>(grad_attn_ws.data_ptr<float>(), Keys.data_ptr<float>(), Queries.size(0), Queries.size(1), clust_start_inds_gpu, clust_sizes_gpu, Queries.size(2), Values.size(0), Queries.size(3), grad_queries.data_ptr<float>());
     cudaDeviceSynchronize();
     grad_queries = grad_queries/sqrt(Queries.size(3));
     grad_queries = grad_queries.reshape({Queries.size(0), Queries.size(1), Queries.size(2), Queries.size(3)});
+    //cudaEventRecord(stop);
+
+    /*cudaEventSynchronize(stop);  // Wait for the stop event to complete
+    milliseconds = 0;
+    cudaEventElapsedTime(&milliseconds, start, stop);
+    cout << "grad queries calculation time: " << milliseconds << " ms" << endl;
+
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);*/
 
     at::Tensor grad_keys = at::zeros({Keys.size(0), Keys.size(1)}, Keys.options());
 
@@ -152,6 +205,10 @@ vector<at::Tensor> backward_mhsa(at::Tensor grad_output, at::Tensor soft_attn_ws
     int n_blocks_grad_k_y = (Queries.size(3) + n_threads_grad_k_y - 1)/n_threads_grad_k_y;
     int batch_grad_k = grad_output.size(0);
 
+    //cudaEventCreate(&start);
+    //cudaEventCreate(&stop);
+
+    //cudaEventRecord(start);
     int batch_size = Queries.size(1);
     int n_heads = Queries.size(0);
     Queries = Queries.reshape({Queries.size(0)*Queries.size(1), Queries.size(2), Queries.size(3)});
@@ -162,6 +219,15 @@ vector<at::Tensor> backward_mhsa(at::Tensor grad_output, at::Tensor soft_attn_ws
     //delete grad_attn_ws;
     Queries = Queries.reshape({n_heads, batch_size, Queries.size(1), Queries.size(2)});
     grad_keys = grad_keys/sqrt(Queries.size(3));
+    //cudaEventRecord(stop);
+
+    /*cudaEventSynchronize(stop);  // Wait for the stop event to complete
+    milliseconds = 0;
+    cudaEventElapsedTime(&milliseconds, start, stop);
+    cout << "grad keys calculation time: " << milliseconds << " ms" << endl;
+
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);*/
 
     cudaFree(clust_start_inds_gpu);
     cudaFree(clust_sizes_gpu);
