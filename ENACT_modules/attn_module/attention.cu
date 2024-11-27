@@ -214,7 +214,7 @@ vector<at::Tensor> backward_mhsa(at::Tensor grad_output, at::Tensor soft_attn_ws
     Queries = Queries.reshape({Queries.size(0)*Queries.size(1), Queries.size(2), Queries.size(3)});
     dim3 numBlocks_grad_k(n_blocks_grad_k_x, n_blocks_grad_k_y, batch_grad_k);
     dim3 threadsPerBlock_grad_k(n_threads_grad_k_x, n_threads_grad_k_y);
-    grad_k<<<numBlocks_grad_k, threadsPerBlock_grad_k>>>(grad_attn_ws.data_ptr<float>(), Queries.data_ptr<float>(), Queries.size(0), Queries.size(1), clust_start_inds_gpu, clust_sizes_gpu, grad_attn_ws.size(1), Queries.size(2), Queries.size(1), grad_keys.data_ptr<float>());
+    grad_k<<<numBlocks_grad_k, threadsPerBlock_grad_k>>>(grad_attn_ws.data_ptr<float>(), Queries.data_ptr<float>(), n_heads, batch_size, clust_start_inds_gpu, clust_sizes_gpu, grad_attn_ws.size(1), Queries.size(2), Queries.size(1), grad_keys.data_ptr<float>());
     cudaDeviceSynchronize();
     //delete grad_attn_ws;
     Queries = Queries.reshape({n_heads, batch_size, Queries.size(1), Queries.size(2)});

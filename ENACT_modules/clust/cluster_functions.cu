@@ -8,7 +8,7 @@ using namespace std;
 __global__ void clustering(const float* Keys, const float* Values, const float* entropy, const int* entropy_step, const int* start_inds, const int* sizes, const int num_clusters, const int feature_dims, float* Keys_cl, float* Values_cl){
 
     int regions = blockIdx.x*blockDim.x+threadIdx.x;
-    int id_feat = blockIdx.y;
+    int id_feat = blockIdx.y*blockDim.y+threadIdx.y;
 
     if (regions<num_clusters && id_feat<feature_dims){
         float sum_k=0.;
@@ -33,7 +33,7 @@ __global__ void clustering(const float* Keys, const float* Values, const float* 
 __global__ void grad_clustering(const float* grad_Keys_cl, const float* grad_Values_cl, const float* Keys, const float* Values, const float* entropy, const int* entropy_step, const int* start_inds, const int* sizes, const int num_clusters, const int feature_dims, float* grad_Keys, float* grad_Values, float* grad_entropy){
 
     int regions = blockIdx.x*blockDim.x+threadIdx.x;
-    int id_feat = blockIdx.y;
+    int id_feat = blockIdx.y*blockDim.y+threadIdx.y;
 
     if (regions<num_clusters && id_feat<feature_dims){
         float sum_exp=0.;
@@ -44,7 +44,7 @@ __global__ void grad_clustering(const float* grad_Keys_cl, const float* grad_Val
             sum_k+=exp(entropy[s])*Keys[s*feature_dims+id_feat];
             sum_v+=exp(entropy[s])*Values[s*feature_dims+id_feat];
         }
-        
+        __syncthreads();
         for (int s=start_inds[regions];s<start_inds[regions]+sizes[regions];s++){
             if (entropy_step[s]<0){
                 grad_Keys[s*feature_dims+id_feat]=grad_Keys_cl[regions*feature_dims+id_feat]*exp(entropy[s])/sum_exp;
@@ -123,9 +123,10 @@ vector<at::Tensor> enact_cluster_backward(at::Tensor grad_Keys_cl, at::Tensor gr
 
     int n_blocks_reg = (grad_Keys_cl.size(0) + n_threads_reg - 1)/n_threads_reg;
     int n_blocks_ft = (grad_Keys_cl.size(1) + n_threads_ft - 1)/n_threads_ft;
+    //int n_blocks_ft = grad_Keys_cl.size(1);
 
     dim3 numBlocks(n_blocks_reg, n_blocks_ft);
-    dim3 threadsPerBlock(n_threads_reg);
+    dim3 threadsPerBlock(n_threads_reg, n_threads_ft);
     grad_clustering<<<numBlocks, threadsPerBlock>>>(grad_Keys_cl.data_ptr<float>(), grad_Values_cl.data_ptr<float>(), Keys.data_ptr<float>(), Values.data_ptr<float>(), Entropy.data_ptr<float>(), Entropy_step_gpu, start_inds_gpu, region_lengths_gpu, region_lengths.size(), Keys.size(1), grad_Keys.data_ptr<float>(), grad_Values.data_ptr<float>(), grad_entropy.data_ptr<float>());
     cudaDeviceSynchronize();
     grad_entropy=grad_entropy.sum(-1);

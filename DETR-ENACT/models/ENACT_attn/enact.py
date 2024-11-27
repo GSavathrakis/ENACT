@@ -9,7 +9,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import time
 
-
+#torch.autograd.set_detect_anomaly(True)
 
 
 class ClustAttn(nn.Module):
@@ -74,9 +74,9 @@ class ClustAttn(nn.Module):
         sizes = sizes.tolist()
         
         
-        k, v = CLUSTFunction.apply(k, v, entropy, entropy_step, start_indices, region_lengths)
-        """
+        k_cl, v_cl = CLUSTFunction.apply(k, v, entropy, entropy_step, start_indices, region_lengths)
         
+        """
         k = k.flatten(0,1)
         v = v.flatten(0,1)
         
@@ -88,14 +88,14 @@ class ClustAttn(nn.Module):
         """
 
         q = self.W_q(q)
-        k = self.W_k(k)
-        v  = self.W_v(v)
+        k_cl = self.W_k(k_cl)
+        v_cl  = self.W_v(v_cl)
         
         q = q.view(bs, spat, self.n_heads, feats//self.n_heads).permute(2, 0, 1, 3)
-        k = k.view(-1, self.n_heads, feats//self.n_heads).permute(1, 0, 2).flatten(0,1)
-        v = v.view(-1, self.n_heads, feats//self.n_heads).permute(1, 0, 2).flatten(0,1)
+        k_cl = k_cl.view(-1, self.n_heads, feats//self.n_heads).permute(1, 0, 2).flatten(0,1)
+        v_cl = v_cl.view(-1, self.n_heads, feats//self.n_heads).permute(1, 0, 2).flatten(0,1)
             
-        attention = ATTNFunction.apply(q, k, v, start_inds, sizes)
+        attention = ATTNFunction.apply(q, k_cl, v_cl, start_inds, sizes)
         
 
         attention = attention.permute(1,2,0,3)
@@ -151,6 +151,7 @@ class CLUSTFunction(torch.autograd.Function):
         ctx.reg_l = reg_l
         ctx.save_for_backward(k, v, ent)
         k_cl, v_cl = ENACT.enact_cluster_forward(k, v, ent, ent_step, st_inds, reg_l)
+        #torch.cuda.synchronize()
         return k_cl, v_cl
     
     @staticmethod
@@ -161,6 +162,7 @@ class CLUSTFunction(torch.autograd.Function):
         st_inds = ctx.st_inds
         reg_l = ctx.reg_l
         grad_k, grad_v, grad_entr = ENACT.enact_cluster_backward(grad_k_cl, grad_v_cl, k, v, ent, ent_step, st_inds, reg_l)
+        #torch.cuda.synchronize()
         return grad_k, grad_v, grad_entr, None, None, None
 
 class ATTNFunction(torch.autograd.Function):
@@ -171,7 +173,7 @@ class ATTNFunction(torch.autograd.Function):
         ctx.cl_sizes = cl_sizes
         
         output, attn_w = ENACT.forward_mhsa(qs, clust_ks, clust_vs, start_indices, cl_sizes)
-        
+        #torch.cuda.synchronize()
         ctx.save_for_backward(qs, clust_ks, clust_vs, attn_w)
 
         return output
@@ -185,6 +187,7 @@ class ATTNFunction(torch.autograd.Function):
         cl_sizes = ctx.cl_sizes
         #start_time = time.time()
         grad_qs, grad_ks, grad_vs = ENACT.backward_mhsa(grad_output, attn_w, qs, clust_ks, clust_vs, start_indices, cl_sizes)
+        #torch.cuda.synchronize()
         #end_time = time.time()
         #print(f"Time lapsed backward:{end_time-start_time}")
         return grad_qs, grad_ks, grad_vs, None, None
