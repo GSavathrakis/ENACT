@@ -17,10 +17,12 @@ import util.misc as utils
 from datasets.coco_eval import CocoEvaluator
 from datasets.panoptic_eval import PanopticEvaluator
 
+#from torch.utils.tensorboard import SummaryWriter
+
 
 def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
                     data_loader: Iterable, optimizer: torch.optim.Optimizer,
-                    device: torch.device, epoch: int, max_norm: float = 0):
+                    device: torch.device, epoch: int, global_step: int, max_norm: float = 0):
     model.train()
     criterion.train()
     metric_logger = utils.MetricLogger(delimiter="  ")
@@ -73,10 +75,19 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
             sys.exit(1)
 
         optimizer.zero_grad()
+        #with torch.autograd.detect_anomaly():
+            #losses.backward()
         losses.backward()
         if max_norm > 0:
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm)
         optimizer.step()
+
+        for param in model.parameters():
+            if param.grad is not None:
+                grad_norm = param.grad.data.norm(2).item()
+                if grad_norm > 1e5:  # Set an appropriate threshold
+                    print(f"Warning: Exploding gradient detected! Norm: {grad_norm}")
+        #global_step+=1
 
         metric_logger.update(loss=loss_value, **loss_dict_reduced_scaled, **loss_dict_reduced_unscaled)
         metric_logger.update(class_error=loss_dict_reduced['class_error'])

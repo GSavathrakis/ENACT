@@ -1,239 +1,186 @@
 #include <iostream>
 #include <cmath>
 #include <cuda_runtime.h>
-#include <ATen/ATen.h>
+//#include <ATen/ATen.h>
+#include <torch/extension.h>
 #include "attention.h"
 #include "ops/ops.h"
 #include <chrono>
 
 using namespace std;
 
-vector<at::Tensor> forward_mhsa(at::Tensor Queries, at::Tensor Keys, at::Tensor Values, vector<int> clust_start_inds, vector<int> clust_sizes){
+void forward_mhsa(const torch::Tensor Queries, const torch::Tensor Keys, const torch::Tensor Values, const torch::Tensor clust_start_inds, 
+                  const torch::Tensor clust_sizes, torch::Tensor attn_ws, torch::Tensor soft_attn_ws, torch::Tensor attn){
     // Queries shape: num heads x Batch size x spatial dimensions x feature dimensions
     // Keys shape:    concatenated spatial dims along batch size and num heads x feature dimensions
     // Values shape:  concatenated spatial dims along batch size and num heads x feature dimensions
 
-    at::Tensor attn_ws = at::zeros({Queries.size(2), Keys.size(0)}, Queries.options());
-    at::Tensor soft_attn_ws = at::zeros({Queries.size(2), Keys.size(0)}, Queries.options());
+    //torch::Tensor attn_ws = torch::zeros({Queries.size(2), Keys.size(0)}, Queries.options());
+    //torch::Tensor soft_attn_ws = torch::zeros({Queries.size(2), Keys.size(0)}, Queries.options());
+
+    int num_heads = Queries.size(0);
+    int batch_size = Queries.size(1);
+    int spatial_size = Queries.size(2);
+    int feature_dims = Queries.size(3);
+    int concat_spatial_dims = Keys.size(0);
 
     int n_threads_attn_ws_x = 32;
     int n_threads_attn_ws_y = 32;
 
-    int n_blocks_attn_ws_x = (Queries.size(2) + n_threads_attn_ws_x - 1)/n_threads_attn_ws_x;
-    int n_blocks_attn_ws_y = (Keys.size(0) + n_threads_attn_ws_y - 1)/n_threads_attn_ws_y;
-    int batch_attn_ws = Queries.size(0)*Queries.size(1);
+    int n_blocks_attn_ws_x = (spatial_size + n_threads_attn_ws_x - 1)/n_threads_attn_ws_x + 1;
+    int n_blocks_attn_ws_y = (concat_spatial_dims + n_threads_attn_ws_y - 1)/n_threads_attn_ws_y + 1;
+    int batch_attn_ws = num_heads*batch_size + 1;
 
-    int* clust_start_inds_gpu;
+    /*int* clust_start_inds_gpu;
     int* clust_sizes_gpu;
 
     cudaMalloc(&clust_start_inds_gpu, clust_start_inds.size() * sizeof(int));
     cudaMalloc(&clust_sizes_gpu, clust_sizes.size() * sizeof(int));
 
     cudaMemcpy(clust_start_inds_gpu, clust_start_inds.data(), clust_start_inds.size() * sizeof(int), cudaMemcpyHostToDevice);
-    cudaMemcpy(clust_sizes_gpu, clust_sizes.data(), clust_sizes.size() * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(clust_sizes_gpu, clust_sizes.data(), clust_sizes.size() * sizeof(int), cudaMemcpyHostToDevice);*/
 
     dim3 numBlocks_attn_ws(n_blocks_attn_ws_x, n_blocks_attn_ws_y, batch_attn_ws);
     dim3 threadsPerBlock_attn_ws(n_threads_attn_ws_x, n_threads_attn_ws_y);
-    attention_weights<<<numBlocks_attn_ws, threadsPerBlock_attn_ws>>>(Queries.data_ptr<float>(), Keys.data_ptr<float>(), Queries.size(0), Queries.size(1), Queries.size(2), clust_start_inds_gpu, clust_sizes_gpu, Keys.size(0), Queries.size(3), attn_ws.data_ptr<float>());
-    cudaDeviceSynchronize();
-    attn_ws = attn_ws/sqrt(Keys.size(1));
+    attention_weights<<<numBlocks_attn_ws, threadsPerBlock_attn_ws>>>(Queries.data_ptr<float>(), Keys.data_ptr<float>(), num_heads, batch_size, spatial_size, clust_start_inds.data_ptr<int>(), clust_sizes.data_ptr<int>(), concat_spatial_dims, feature_dims, attn_ws.data_ptr<float>());
+    //cudaDeviceSynchronize();
+    attn_ws = attn_ws/sqrt(feature_dims);
 
     int n_threads_soft_attn_ws = 1024;
 
-    int n_blocks_soft_attn_ws_x = (Queries.size(2) + n_threads_soft_attn_ws - 1)/n_threads_soft_attn_ws;
-    int n_blocks_soft_attn_ws_y = Queries.size(0)*Queries.size(1);
+    int n_blocks_soft_attn_ws_x = (spatial_size + n_threads_soft_attn_ws - 1)/n_threads_soft_attn_ws + 1;
+    int n_blocks_soft_attn_ws_y = num_heads*batch_size + 1;
     
     dim3 numBlocks_soft_attn_ws(n_blocks_soft_attn_ws_x, n_blocks_soft_attn_ws_y);
     dim3 threadsPerBlock_soft_attn_ws(n_threads_soft_attn_ws, 1);
-    softmax<<<numBlocks_soft_attn_ws, threadsPerBlock_soft_attn_ws>>>(attn_ws.data_ptr<float>(), Queries.size(0), Queries.size(1), clust_start_inds_gpu, clust_sizes_gpu, Queries.size(2), Keys.size(0), soft_attn_ws.data_ptr<float>());
-    cudaDeviceSynchronize();
+    softmax<<<numBlocks_soft_attn_ws, threadsPerBlock_soft_attn_ws>>>(attn_ws.data_ptr<float>(), num_heads, batch_size, clust_start_inds.data_ptr<int>(), clust_sizes.data_ptr<int>(), spatial_size, concat_spatial_dims, soft_attn_ws.data_ptr<float>());
+    //cudaDeviceSynchronize();
 
-    at::Tensor attn = at::zeros({Queries.size(0)*Queries.size(1), soft_attn_ws.size(0), Values.size(1)}, Queries.options());
+    //torch::Tensor attn = torch::zeros({Queries.size(0), Queries.size(1), soft_attn_ws.size(0), Values.size(1)}, Queries.options());
 
     int n_threads_attn_x = 32;
     int n_threads_attn_y = 32;
 
-    int n_blocks_attn_x = (soft_attn_ws.size(0) + n_threads_attn_x - 1)/n_threads_attn_x;
-    int n_blocks_attn_y = (Values.size(1) + n_threads_attn_y - 1)/n_threads_attn_y;
-    int batch_attn = Queries.size(0)*Queries.size(1);
+    int n_blocks_attn_x = (spatial_size + n_threads_attn_x - 1)/n_threads_attn_x + 1;
+    int n_blocks_attn_y = (feature_dims + n_threads_attn_y - 1)/n_threads_attn_y + 1;
+    int batch_attn = num_heads*batch_size + 1;
 
     dim3 numBlocks_attn(n_blocks_attn_x, n_blocks_attn_y, batch_attn);
     dim3 threadsPerBlock_attn(n_threads_attn_x, n_threads_attn_y);
-    attention<<<numBlocks_attn, threadsPerBlock_attn>>>(soft_attn_ws.data_ptr<float>(), Values.data_ptr<float>(), Queries.size(0), Queries.size(1), clust_start_inds_gpu, clust_sizes_gpu, soft_attn_ws.size(0), Values.size(0), Values.size(1), attn.data_ptr<float>());
-    cudaDeviceSynchronize();
-    attn = attn.reshape({Queries.size(0), Queries.size(1), soft_attn_ws.size(0), Values.size(1)});
+    attention<<<numBlocks_attn, threadsPerBlock_attn>>>(soft_attn_ws.data_ptr<float>(), Values.data_ptr<float>(), num_heads, batch_size, clust_start_inds.data_ptr<int>(), clust_sizes.data_ptr<int>(), spatial_size, concat_spatial_dims, feature_dims, attn.data_ptr<float>());
+    //cudaDeviceSynchronize();
+    //attn = attn.reshape({Queries.size(0), Queries.size(1), soft_attn_ws.size(0), Values.size(1)});
 
-    cudaFree(clust_start_inds_gpu);
-    cudaFree(clust_sizes_gpu);
+    /*cudaFree(clust_start_inds_gpu);
+    cudaFree(clust_sizes_gpu);*/
 
-    return{
+    /*return{
         attn, soft_attn_ws
-    };
+    };*/
 
 }
 
-vector<at::Tensor> backward_mhsa(at::Tensor grad_output, at::Tensor soft_attn_ws, at::Tensor Queries, at::Tensor Keys, at::Tensor Values, vector<int> clust_start_inds, vector<int> clust_sizes){
+void backward_mhsa(const torch::Tensor grad_output, const torch::Tensor soft_attn_ws, const torch::Tensor Queries, const torch::Tensor Keys, 
+                   const torch::Tensor Values, const torch::Tensor clust_start_inds, const torch::Tensor clust_sizes, torch::Tensor grad_soft_attn_ws,
+                   torch::Tensor grad_attn_ws, torch::Tensor grad_values, torch::Tensor grad_queries, torch::Tensor grad_keys){
     
-    at::Tensor grad_values = at::zeros({Values.size(0), Values.size(1)}, Values.options());
-    grad_output = grad_output.reshape({grad_output.size(0)*grad_output.size(1), grad_output.size(2), grad_output.size(3)});
+    //torch::Tensor grad_values = torch::zeros({Values.size(0), Values.size(1)}, Values.options());
+    //grad_output = grad_output.reshape({grad_output.size(0)*grad_output.size(1), grad_output.size(2), grad_output.size(3)});
+
+    int num_heads = grad_output.size(0);
+    int batch_size = grad_output.size(1);
+    int spatial_dims = grad_output.size(2);
+    int feature_dims = grad_output.size(3);
+    int concat_spatial_dims = Keys.size(0);
 
     int n_threads_grad_v_x = 32;
     int n_threads_grad_v_y = 32;
 
-    int n_blocks_grad_v_x = (soft_attn_ws.size(1) + n_threads_grad_v_x - 1)/n_threads_grad_v_x;
-    int n_blocks_grad_v_y = (grad_output.size(2) + n_threads_grad_v_y - 1)/n_threads_grad_v_y;
-    int batch_grad_v = grad_output.size(0);
+    int n_blocks_grad_v_x = (concat_spatial_dims + n_threads_grad_v_x - 1)/n_threads_grad_v_x + 1;
+    int n_blocks_grad_v_y = (feature_dims + n_threads_grad_v_y - 1)/n_threads_grad_v_y + 1;
+    int batch_grad_v = num_heads*batch_size + 1;
 
-    int* clust_start_inds_gpu;
+    /*int* clust_start_inds_gpu;
     int* clust_sizes_gpu;
 
     cudaMalloc(&clust_start_inds_gpu, clust_start_inds.size() * sizeof(int));
     cudaMalloc(&clust_sizes_gpu, clust_sizes.size() * sizeof(int));
 
     cudaMemcpy(clust_start_inds_gpu, clust_start_inds.data(), clust_start_inds.size() * sizeof(int), cudaMemcpyHostToDevice);
-    cudaMemcpy(clust_sizes_gpu, clust_sizes.data(), clust_sizes.size() * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(clust_sizes_gpu, clust_sizes.data(), clust_sizes.size() * sizeof(int), cudaMemcpyHostToDevice);*/
 
-    //cudaEvent_t start, stop;
-    //float milliseconds;
-    //cudaEventCreate(&start);
-    //cudaEventCreate(&stop);
-
-    //cudaEventRecord(start);
     dim3 numBlocks_grad_v(n_blocks_grad_v_x, n_blocks_grad_v_y, batch_grad_v);
     dim3 threadsPerBlock_grad_v(n_threads_grad_v_x, n_threads_grad_v_y);
-    grad_v<<<numBlocks_grad_v, threadsPerBlock_grad_v>>>(soft_attn_ws.data_ptr<float>(), grad_output.data_ptr<float>(), Queries.size(0), Queries.size(1), clust_start_inds_gpu, clust_sizes_gpu, soft_attn_ws.size(1), grad_output.size(1), grad_output.size(2), grad_values.data_ptr<float>());
-    cudaDeviceSynchronize();
-    //cudaEventRecord(stop);
+    grad_v<<<numBlocks_grad_v, threadsPerBlock_grad_v>>>(soft_attn_ws.data_ptr<float>(), grad_output.data_ptr<float>(), num_heads, batch_size, clust_start_inds.data_ptr<int>(), clust_sizes.data_ptr<int>(), concat_spatial_dims, spatial_dims, feature_dims, grad_values.data_ptr<float>());
+    //cudaDeviceSynchronize();
 
-    /*cudaEventSynchronize(stop);  // Wait for the stop event to complete
-    milliseconds = 0;
-    cudaEventElapsedTime(&milliseconds, start, stop);
-    cout << "grad values calculation time: " << milliseconds << " ms" << endl;
-
-    cudaEventDestroy(start);
-    cudaEventDestroy(stop);*/
-
-    at::Tensor grad_soft_attn_ws = at::zeros({grad_output.size(1), Values.size(0)}, grad_output.options());
+    //torch::Tensor grad_soft_attn_ws = torch::zeros({grad_output.size(1), Values.size(0)}, grad_output.options());
     
     int n_threads_grad_soft_attn_w_x = 32;
     int n_threads_grad_soft_attn_w_y = 32;
 
-    int n_blocks_grad_soft_attn_w_x = (grad_output.size(1) + n_threads_grad_soft_attn_w_x - 1)/n_threads_grad_soft_attn_w_x;
-    int n_blocks_grad_soft_attn_w_y = (Values.size(0) + n_threads_grad_soft_attn_w_y - 1)/n_threads_grad_soft_attn_w_y;
-    int batch_grad_soft_attn_w = grad_output.size(0);
+    int n_blocks_grad_soft_attn_w_x = (spatial_dims + n_threads_grad_soft_attn_w_x - 1)/n_threads_grad_soft_attn_w_x + 1;
+    int n_blocks_grad_soft_attn_w_y = (concat_spatial_dims + n_threads_grad_soft_attn_w_y - 1)/n_threads_grad_soft_attn_w_y + 1;
+    int batch_grad_soft_attn_w = num_heads*batch_size + 1;
 
-    //cudaEventCreate(&start);
-    //cudaEventCreate(&stop);
-
-    //cudaEventRecord(start);
     dim3 numBlocks_grad_soft_attn_w(n_blocks_grad_soft_attn_w_x, n_blocks_grad_soft_attn_w_y, batch_grad_soft_attn_w);
     dim3 threadsPerBlock_grad_soft_attn_w(n_threads_grad_soft_attn_w_x, n_threads_grad_soft_attn_w_y);
-    grad_soft_attn_w<<<numBlocks_grad_soft_attn_w, threadsPerBlock_grad_soft_attn_w>>>(grad_output.data_ptr<float>(), Values.data_ptr<float>(), Queries.size(0), Queries.size(1), Queries.size(2), clust_start_inds_gpu, clust_sizes_gpu, Values.size(0), Queries.size(3), grad_soft_attn_ws.data_ptr<float>());
-    cudaDeviceSynchronize();
-    //cudaEventRecord(stop);
+    grad_soft_attn_w<<<numBlocks_grad_soft_attn_w, threadsPerBlock_grad_soft_attn_w>>>(grad_output.data_ptr<float>(), Values.data_ptr<float>(), num_heads, batch_size, spatial_dims, clust_start_inds.data_ptr<int>(), clust_sizes.data_ptr<int>(), concat_spatial_dims, feature_dims, grad_soft_attn_ws.data_ptr<float>());
+    //cudaDeviceSynchronize();
 
-    /*cudaEventSynchronize(stop);  // Wait for the stop event to complete
-    milliseconds = 0;
-    cudaEventElapsedTime(&milliseconds, start, stop);
-    cout << "grad soft attention weights calculation time: " << milliseconds << " ms" << endl;
-
-    cudaEventDestroy(start);
-    cudaEventDestroy(stop);*/
-
-    at::Tensor grad_attn_ws = at::zeros({grad_output.size(1), Values.size(0)}, grad_output.options());
+    //torch::Tensor grad_attn_ws = torch::zeros({grad_output.size(1), Values.size(0)}, grad_output.options());
 
     int n_threads_grad_attn_w_x = 32;
     int n_threads_grad_attn_w_y = 32;
 
-    int n_blocks_grad_attn_w_x = (Values.size(0) + n_threads_grad_attn_w_x - 1)/n_threads_grad_attn_w_x;
-    int n_blocks_grad_attn_w_y = (grad_output.size(1) + n_threads_grad_attn_w_y - 1)/n_threads_grad_attn_w_y;
-    int batch_grad_attn_w = grad_output.size(0);
+    int n_blocks_grad_attn_w_x = (concat_spatial_dims + n_threads_grad_attn_w_x - 1)/n_threads_grad_attn_w_x + 1;
+    int n_blocks_grad_attn_w_y = (spatial_dims + n_threads_grad_attn_w_y - 1)/n_threads_grad_attn_w_y + 1;
+    int batch_grad_attn_w = num_heads*batch_size + 1;
 
-    //cudaEventCreate(&start);
-    //cudaEventCreate(&stop);
-
-    //cudaEventRecord(start);
     dim3 numBlocks_grad_attn_w(n_blocks_grad_attn_w_x, n_blocks_grad_attn_w_y, batch_grad_attn_w);
     dim3 threadsPerBlock_grad_attn_w(n_threads_grad_attn_w_x, n_threads_grad_attn_w_y);
-    grad_attn_w<<<numBlocks_grad_attn_w, threadsPerBlock_grad_attn_w>>>(grad_soft_attn_ws.data_ptr<float>(), soft_attn_ws.data_ptr<float>(), Queries.size(0), Queries.size(1), clust_start_inds_gpu, clust_sizes_gpu, Queries.size(2), Values.size(0), grad_attn_ws.data_ptr<float>());
-    cudaDeviceSynchronize();
-    //cudaEventRecord(stop);
+    grad_attn_w<<<numBlocks_grad_attn_w, threadsPerBlock_grad_attn_w>>>(grad_soft_attn_ws.data_ptr<float>(), soft_attn_ws.data_ptr<float>(), num_heads, batch_size, clust_start_inds.data_ptr<int>(), clust_sizes.data_ptr<int>(), spatial_dims, concat_spatial_dims, grad_attn_ws.data_ptr<float>());
+    //cudaDeviceSynchronize();
 
-    /*cudaEventSynchronize(stop);  // Wait for the stop event to complete
-    milliseconds = 0;
-    cudaEventElapsedTime(&milliseconds, start, stop);
-    cout << "grad attention weights calculation time: " << milliseconds << " ms" << endl;
-
-    cudaEventDestroy(start);
-    cudaEventDestroy(stop);*/
-
-    at::Tensor grad_queries = at::zeros({grad_output.size(0), grad_output.size(1), grad_output.size(2)}, grad_output.options());
+    //torch::Tensor grad_queries = torch::zeros({Queries.size(0), Queries.size(1), Queries.size(2), Queries.size(3)}, Queries.options());
 
     int n_threads_grad_q_x = 32;
     int n_threads_grad_q_y = 32;
 
-    int n_blocks_grad_q_x = (grad_attn_ws.size(0) + n_threads_grad_q_x - 1)/n_threads_grad_q_x;
-    int n_blocks_grad_q_y = (Keys.size(1) + n_threads_grad_q_y - 1)/n_threads_grad_q_y;
-    int batch_grad_q = grad_output.size(0);
+    int n_blocks_grad_q_x = (spatial_dims + n_threads_grad_q_x - 1)/n_threads_grad_q_x + 1;
+    int n_blocks_grad_q_y = (feature_dims + n_threads_grad_q_y - 1)/n_threads_grad_q_y + 1;
+    int batch_grad_q = num_heads*batch_size + 1;
 
-    //cudaEventCreate(&start);
-    //cudaEventCreate(&stop);
-
-    //cudaEventRecord(start);
     dim3 numBlocks_grad_q(n_blocks_grad_q_x, n_blocks_grad_q_y, batch_grad_q);
     dim3 threadsPerBlock_grad_q(n_threads_grad_q_x, n_threads_grad_q_y);
-    grad_q<<<numBlocks_grad_q, threadsPerBlock_grad_q>>>(grad_attn_ws.data_ptr<float>(), Keys.data_ptr<float>(), Queries.size(0), Queries.size(1), clust_start_inds_gpu, clust_sizes_gpu, Queries.size(2), Values.size(0), Queries.size(3), grad_queries.data_ptr<float>());
-    cudaDeviceSynchronize();
-    grad_queries = grad_queries/sqrt(Queries.size(3));
-    grad_queries = grad_queries.reshape({Queries.size(0), Queries.size(1), Queries.size(2), Queries.size(3)});
-    //cudaEventRecord(stop);
+    grad_q<<<numBlocks_grad_q, threadsPerBlock_grad_q>>>(grad_attn_ws.data_ptr<float>(), Keys.data_ptr<float>(), num_heads, batch_size, clust_start_inds.data_ptr<int>(), clust_sizes.data_ptr<int>(), spatial_dims, concat_spatial_dims, feature_dims, grad_queries.data_ptr<float>());
+    //cudaDeviceSynchronize();
+    grad_queries = grad_queries/sqrt(feature_dims);
+    //grad_queries = grad_queries.reshape({Queries.size(0), Queries.size(1), Queries.size(2), Queries.size(3)});
 
-    /*cudaEventSynchronize(stop);  // Wait for the stop event to complete
-    milliseconds = 0;
-    cudaEventElapsedTime(&milliseconds, start, stop);
-    cout << "grad queries calculation time: " << milliseconds << " ms" << endl;
-
-    cudaEventDestroy(start);
-    cudaEventDestroy(stop);*/
-
-    at::Tensor grad_keys = at::zeros({Keys.size(0), Keys.size(1)}, Keys.options());
+    //torch::Tensor grad_keys = torch::zeros({Keys.size(0), Keys.size(1)}, Keys.options());
 
     int n_threads_grad_k_x = 32;
     int n_threads_grad_k_y = 32;
 
-    int n_blocks_grad_k_x = (grad_attn_ws.size(1) + n_threads_grad_k_x - 1)/n_threads_grad_k_x;
-    int n_blocks_grad_k_y = (Queries.size(3) + n_threads_grad_k_y - 1)/n_threads_grad_k_y;
-    int batch_grad_k = grad_output.size(0);
+    int n_blocks_grad_k_x = (concat_spatial_dims + n_threads_grad_k_x - 1)/n_threads_grad_k_x + 1;
+    int n_blocks_grad_k_y = (feature_dims + n_threads_grad_k_y - 1)/n_threads_grad_k_y + 1;
+    int batch_grad_k = num_heads*batch_size + 1;
 
-    //cudaEventCreate(&start);
-    //cudaEventCreate(&stop);
-
-    //cudaEventRecord(start);
-    int batch_size = Queries.size(1);
-    int n_heads = Queries.size(0);
-    Queries = Queries.reshape({Queries.size(0)*Queries.size(1), Queries.size(2), Queries.size(3)});
+    //Queries = Queries.reshape({Queries.size(0)*Queries.size(1), Queries.size(2), Queries.size(3)});
     dim3 numBlocks_grad_k(n_blocks_grad_k_x, n_blocks_grad_k_y, batch_grad_k);
     dim3 threadsPerBlock_grad_k(n_threads_grad_k_x, n_threads_grad_k_y);
-    grad_k<<<numBlocks_grad_k, threadsPerBlock_grad_k>>>(grad_attn_ws.data_ptr<float>(), Queries.data_ptr<float>(), n_heads, batch_size, clust_start_inds_gpu, clust_sizes_gpu, grad_attn_ws.size(1), Queries.size(2), Queries.size(1), grad_keys.data_ptr<float>());
-    cudaDeviceSynchronize();
+    grad_k<<<numBlocks_grad_k, threadsPerBlock_grad_k>>>(grad_attn_ws.data_ptr<float>(), Queries.data_ptr<float>(), num_heads, batch_size, clust_start_inds.data_ptr<int>(), clust_sizes.data_ptr<int>(), concat_spatial_dims, feature_dims, spatial_dims, grad_keys.data_ptr<float>());
+    //cudaDeviceSynchronize();
     //delete grad_attn_ws;
-    Queries = Queries.reshape({n_heads, batch_size, Queries.size(1), Queries.size(2)});
-    grad_keys = grad_keys/sqrt(Queries.size(3));
-    //cudaEventRecord(stop);
+    //Queries = Queries.reshape({n_heads, batch_size, Queries.size(1), Queries.size(2)});
+    grad_keys = grad_keys/sqrt(feature_dims);
 
-    /*cudaEventSynchronize(stop);  // Wait for the stop event to complete
-    milliseconds = 0;
-    cudaEventElapsedTime(&milliseconds, start, stop);
-    cout << "grad keys calculation time: " << milliseconds << " ms" << endl;
+    /*cudaFree(clust_start_inds_gpu);
+    cudaFree(clust_sizes_gpu);*/
 
-    cudaEventDestroy(start);
-    cudaEventDestroy(stop);*/
-
-    cudaFree(clust_start_inds_gpu);
-    cudaFree(clust_sizes_gpu);
-
-    return{
+    /*return{
         grad_queries, grad_keys, grad_values
-    };
+    };*/
 
 }

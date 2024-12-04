@@ -1,7 +1,8 @@
 #include <iostream>
 #include <cmath>
 #include <cuda_runtime.h>
-#include <ATen/ATen.h>
+//#include <ATen/ATen.h>
+#include <torch/extension.h>
 #include "clust_func.h"
 using namespace std;
 
@@ -44,7 +45,7 @@ __global__ void grad_clustering(const float* grad_Keys_cl, const float* grad_Val
             sum_k+=exp(entropy[s])*Keys[s*feature_dims+id_feat];
             sum_v+=exp(entropy[s])*Values[s*feature_dims+id_feat];
         }
-        __syncthreads();
+        //__syncthreads();
         for (int s=start_inds[regions];s<start_inds[regions]+sizes[regions];s++){
             if (entropy_step[s]<0){
                 grad_Keys[s*feature_dims+id_feat]=grad_Keys_cl[regions*feature_dims+id_feat]*exp(entropy[s])/sum_exp;
@@ -62,12 +63,12 @@ __global__ void grad_clustering(const float* grad_Keys_cl, const float* grad_Val
 }
 
 
-vector<at::Tensor> enact_cluster_forward(at::Tensor Keys, at::Tensor Values, at::Tensor Entropy, vector<int> Entropy_step, vector<int> start_inds, vector<int> region_lengths){
+vector<torch::Tensor> enact_cluster_forward(torch::Tensor Keys, torch::Tensor Values, torch::Tensor Entropy, torch::Tensor Entropy_step, torch::Tensor start_inds, torch::Tensor region_lengths){
     
-    at::Tensor Keys_cl = at::zeros({(int) region_lengths.size(), Keys.size(1)}, Keys.options());
-    at::Tensor Values_cl = at::zeros({(int) region_lengths.size(), Values.size(1)}, Values.options());
+    torch::Tensor Keys_cl = torch::zeros({region_lengths.size(0), Keys.size(1)}, Keys.options());
+    torch::Tensor Values_cl = torch::zeros({region_lengths.size(0), Values.size(1)}, Values.options());
 
-    int* Entropy_step_gpu;
+    /*int* Entropy_step_gpu;
     int* start_inds_gpu;
     int* region_lengths_gpu;
 
@@ -77,36 +78,36 @@ vector<at::Tensor> enact_cluster_forward(at::Tensor Keys, at::Tensor Values, at:
 
     cudaMemcpy(Entropy_step_gpu, Entropy_step.data(), Entropy_step.size() * sizeof(int), cudaMemcpyHostToDevice);
     cudaMemcpy(start_inds_gpu, start_inds.data(), start_inds.size() * sizeof(int), cudaMemcpyHostToDevice);
-    cudaMemcpy(region_lengths_gpu, region_lengths.data(), region_lengths.size() * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(region_lengths_gpu, region_lengths.data(), region_lengths.size() * sizeof(int), cudaMemcpyHostToDevice);*/
 
     int n_threads_reg = 32;
     int n_threads_ft  = 32;
 
-    int n_blocks_reg = ((int) region_lengths.size() + n_threads_reg - 1)/n_threads_reg;
+    int n_blocks_reg = (region_lengths.size(0) + n_threads_reg - 1)/n_threads_reg;
     int n_blocks_ft = (Keys.size(1) + n_threads_ft - 1)/n_threads_ft;
     //int n_blocks_ft = Keys.size(1);
 
     dim3 numBlocks(n_blocks_reg, n_blocks_ft);
     dim3 threadsPerBlock(n_threads_reg, n_threads_ft);
-    clustering<<<numBlocks, threadsPerBlock>>>(Keys.data_ptr<float>(), Values.data_ptr<float>(), Entropy.data_ptr<float>(), Entropy_step_gpu, start_inds_gpu, region_lengths_gpu, region_lengths.size(), Keys.size(1), Keys_cl.data_ptr<float>(), Values_cl.data_ptr<float>());
+    clustering<<<numBlocks, threadsPerBlock>>>(Keys.data_ptr<float>(), Values.data_ptr<float>(), Entropy.data_ptr<float>(), Entropy_step.data_ptr<int>(), start_inds.data_ptr<int>(), region_lengths.data_ptr<int>(), region_lengths.size(0), Keys.size(1), Keys_cl.data_ptr<float>(), Values_cl.data_ptr<float>());
     cudaDeviceSynchronize();
 
-    cudaFree(Entropy_step_gpu);
+    /*cudaFree(Entropy_step_gpu);
     cudaFree(start_inds_gpu);
-    cudaFree(region_lengths_gpu);
+    cudaFree(region_lengths_gpu);*/
 
     return{
         Keys_cl, Values_cl
     };
 }
 
-vector<at::Tensor> enact_cluster_backward(at::Tensor grad_Keys_cl, at::Tensor grad_Values_cl, at::Tensor Keys, at::Tensor Values, at::Tensor Entropy, vector<int> Entropy_step, vector<int> start_inds, vector<int> region_lengths){
+vector<torch::Tensor> enact_cluster_backward(torch::Tensor grad_Keys_cl, torch::Tensor grad_Values_cl, torch::Tensor Keys, torch::Tensor Values, torch::Tensor Entropy, torch::Tensor Entropy_step, torch::Tensor start_inds, torch::Tensor region_lengths){
 
-    at::Tensor grad_Keys    = at::zeros({Entropy.size(0),   grad_Keys_cl.size(1)},   grad_Keys_cl.options());
-    at::Tensor grad_Values  = at::zeros({Entropy.size(0), grad_Values_cl.size(1)}, grad_Values_cl.options());
-    at::Tensor grad_entropy = at::zeros({Entropy.size(0), grad_Values_cl.size(1)},        Entropy.options());
+    torch::Tensor grad_Keys    = torch::zeros({Entropy.size(0),   grad_Keys_cl.size(1)},   grad_Keys_cl.options());
+    torch::Tensor grad_Values  = torch::zeros({Entropy.size(0), grad_Values_cl.size(1)}, grad_Values_cl.options());
+    torch::Tensor grad_entropy = torch::zeros({Entropy.size(0), grad_Values_cl.size(1)},        Entropy.options());
 
-    int* Entropy_step_gpu;
+    /*int* Entropy_step_gpu;
     int* start_inds_gpu;
     int* region_lengths_gpu;
 
@@ -116,7 +117,7 @@ vector<at::Tensor> enact_cluster_backward(at::Tensor grad_Keys_cl, at::Tensor gr
 
     cudaMemcpy(Entropy_step_gpu, Entropy_step.data(), Entropy_step.size() * sizeof(int), cudaMemcpyHostToDevice);
     cudaMemcpy(start_inds_gpu, start_inds.data(), start_inds.size() * sizeof(int), cudaMemcpyHostToDevice);
-    cudaMemcpy(region_lengths_gpu, region_lengths.data(), region_lengths.size() * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(region_lengths_gpu, region_lengths.data(), region_lengths.size() * sizeof(int), cudaMemcpyHostToDevice);*/
 
     int n_threads_reg = 32;
     int n_threads_ft  = 32;
@@ -127,13 +128,13 @@ vector<at::Tensor> enact_cluster_backward(at::Tensor grad_Keys_cl, at::Tensor gr
 
     dim3 numBlocks(n_blocks_reg, n_blocks_ft);
     dim3 threadsPerBlock(n_threads_reg, n_threads_ft);
-    grad_clustering<<<numBlocks, threadsPerBlock>>>(grad_Keys_cl.data_ptr<float>(), grad_Values_cl.data_ptr<float>(), Keys.data_ptr<float>(), Values.data_ptr<float>(), Entropy.data_ptr<float>(), Entropy_step_gpu, start_inds_gpu, region_lengths_gpu, region_lengths.size(), Keys.size(1), grad_Keys.data_ptr<float>(), grad_Values.data_ptr<float>(), grad_entropy.data_ptr<float>());
+    grad_clustering<<<numBlocks, threadsPerBlock>>>(grad_Keys_cl.data_ptr<float>(), grad_Values_cl.data_ptr<float>(), Keys.data_ptr<float>(), Values.data_ptr<float>(), Entropy.data_ptr<float>(), Entropy_step.data_ptr<int>(), start_inds.data_ptr<int>(), region_lengths.data_ptr<int>(), region_lengths.size(0), Keys.size(1), grad_Keys.data_ptr<float>(), grad_Values.data_ptr<float>(), grad_entropy.data_ptr<float>());
     cudaDeviceSynchronize();
-    grad_entropy=grad_entropy.sum(-1);
+    //grad_entropy=grad_entropy.sum(-1);
 
-    cudaFree(Entropy_step_gpu);
+    /*cudaFree(Entropy_step_gpu);
     cudaFree(start_inds_gpu);
-    cudaFree(region_lengths_gpu);
+    cudaFree(region_lengths_gpu);*/
 
     return{
         grad_Keys, grad_Values, grad_entropy

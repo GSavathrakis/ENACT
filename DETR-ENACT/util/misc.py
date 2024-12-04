@@ -252,7 +252,7 @@ class MetricLogger(object):
                     f.write(str(iter_time) + '\n')
                     f.close()
                     f = open("/workspace1/DETR-ENACT/gpu_enact.txt", "a")
-                    mm = print_mem_usage(1)
+                    mm = print_mem_usage(0)
                     f.write(str(mm) + '\n')
                     f.close()
                     print(log_msg.format(
@@ -265,7 +265,7 @@ class MetricLogger(object):
                     f.write(str(iter_time) + '\n')
                     f.close()
                     f = open("/workspace1/DETR-ENACT/gpu_enact.txt", "a")
-                    mm = print_mem_usage(1)
+                    mm = print_mem_usage(0)
                     f.write(str(mm) + '\n')
                     f.close()
                     print(log_msg.format(

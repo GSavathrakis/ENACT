@@ -76,8 +76,10 @@ class TransformerEncoder(nn.Module):
                 pos: Optional[Tensor] = None):
         output = src
         
+        i=1
         for layer in self.layers:
-            output = layer(self.with_pos_embed(output,pos), self.with_pos_embed(output,pos), output, h, w)
+            output = layer(self.with_pos_embed(output,pos), self.with_pos_embed(output,pos), output, h, w, i)
+            i+=1
 
         if self.norm is not None:
             output = self.norm(output)
@@ -148,9 +150,9 @@ class TransformerEncoderLayer(nn.Module):
         self.activation = _get_activation_fn(activation)
         self.normalize_before = normalize_before
     
-    def forward_post(self, q, k, src, h, w):
+    def forward_post(self, q, k, src, h, w, n_layer):
         
-        src2 = self.self_attn(q, k, src, h, w)
+        src2 = self.self_attn(q, k, src, h, w, n_layer)
         src = self.norm1(src + self.dropout1(src2))
         src2 = self.activation(self.linear1(src))
         src2 = self.dropout2(src2)
@@ -159,9 +161,9 @@ class TransformerEncoderLayer(nn.Module):
 
         return src
     
-    def forward_pre(self, q, k, src, h, w):
+    def forward_pre(self, q, k, src, h, w, n_layer):
         src = self.norm1(src)
-        src2 = self.self_attn(q, k, src, h, w)
+        src2 = self.self_attn(q, k, src, h, w, n_layer)
         src = self.norm2(src + self.dropout1(src2))
         src2 = self.activation(self.linear1(src))
         src2 = self.dropout2(src2)
@@ -169,11 +171,11 @@ class TransformerEncoderLayer(nn.Module):
 
         return src
     
-    def forward(self, q, k, src, h, w):
+    def forward(self, q, k, src, h, w, n_layer):
         if self.normalize_before==True:
-            return self.forward_pre(q, k, src, h, w)
+            return self.forward_pre(q, k, src, h, w, n_layer)
         else:
-            return self.forward_post(q, k, src, h, w)
+            return self.forward_post(q, k, src, h, w, n_layer)
 
 
 class TransformerDecoderLayer(nn.Module):
