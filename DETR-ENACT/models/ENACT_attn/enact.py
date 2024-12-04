@@ -238,15 +238,27 @@ class ATTNFunction(torch.autograd.Function):
         qs, clust_ks, clust_vs, soft_attn_w = ctx.saved_tensors
         start_indices = ctx.start_indices
         cl_sizes = ctx.cl_sizes
+
+        num_heads = grad_output.shape[0]
+        batch_size = grad_output.shape[1]
+        spatial_dims = grad_output.shape[2]
+        feature_dims = grad_output.shape[3]
+        concat_spatial_dims = clust_ks.shape[0]
         
         grad_soft_attn_w = torch.zeros(soft_attn_w.shape, dtype=torch.float, device=qs.device)
         grad_attn_w = torch.zeros(soft_attn_w.shape, dtype=torch.float, device=qs.device)
         grad_qs = torch.zeros(qs.shape, dtype=torch.float, device=qs.device)
         grad_ks = torch.zeros(clust_ks.shape, dtype=torch.float, device=qs.device)
         grad_vs = torch.zeros(clust_vs.shape, dtype=torch.float, device=qs.device)
+
+        ENACT.grad_Values(grad_output, soft_attn_w, start_indices, cl_sizes, num_heads, batch_size, spatial_dims, concat_spatial_dims, feature_dims, grad_vs)
+        ENACT.grad_Attention(grad_output, clust_vs, start_indices, cl_sizes, num_heads, batch_size, spatial_dims, concat_spatial_dims, feature_dims, grad_soft_attn_w)
+        ENACT.Jacobian(grad_soft_attn_w, soft_attn_w, start_indices, cl_sizes, num_heads, batch_size, spatial_dims, concat_spatial_dims, grad_attn_w)
+        ENACT.grad_Queries(grad_attn_w, clust_ks, start_indices, cl_sizes, num_heads, batch_size, spatial_dims, concat_spatial_dims, feature_dims, grad_qs)
+        ENACT.grad_Keys(grad_attn_w, qs, start_indices, cl_sizes, num_heads, batch_size, spatial_dims, concat_spatial_dims, feature_dims, grad_ks)
         
-        ENACT.backward_mhsa(grad_output, soft_attn_w, qs, clust_ks, clust_vs, start_indices, cl_sizes,
-                            grad_soft_attn_w, grad_attn_w, grad_vs, grad_qs, grad_ks)
+        #ENACT.backward_mhsa(grad_output, soft_attn_w, qs, clust_ks, clust_vs, start_indices, cl_sizes,
+                            #grad_soft_attn_w, grad_attn_w, grad_vs, grad_qs, grad_ks)
         
         if torch.isnan(grad_qs).any():
             print("NaN detected in grad_qs")
