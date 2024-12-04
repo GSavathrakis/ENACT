@@ -6,7 +6,7 @@
 #include "attention.h"
 #include "ops/ops.h"
 
-void grad_values(const torch::Tensor grad_output, const torch::Tensor soft_attn_ws, const torch::Tensor clust_start_inds, const torch::Tensor clust_sizes, 
+void grad_Values(const torch::Tensor grad_output, const torch::Tensor soft_attn_ws, const torch::Tensor clust_start_inds, const torch::Tensor clust_sizes, 
                  const int num_heads, const int batch_size, const int spatial_dims, const int concat_spatial_dims, const int feature_dims, torch::Tensor grad_values){
     
     int n_threads_grad_v_x = 32;
