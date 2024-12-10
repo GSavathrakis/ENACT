@@ -17,12 +17,10 @@ import util.misc as utils
 from datasets.coco_eval import CocoEvaluator
 from datasets.panoptic_eval import PanopticEvaluator
 
-#from torch.utils.tensorboard import SummaryWriter
-
 
 def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
                     data_loader: Iterable, optimizer: torch.optim.Optimizer,
-                    device: torch.device, epoch: int, global_step: int, max_norm: float = 0):
+                    device: torch.device, epoch: int, max_norm: float = 0):
     model.train()
     criterion.train()
     metric_logger = utils.MetricLogger(delimiter="  ")
@@ -31,9 +29,6 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
     header = 'Epoch: [{}]'.format(epoch)
     print_freq = 100
 
-    entropy_clusters = np.array([])
-    gt_objs = np.array([])
-    similarities_batch = []
     for samples, targets in metric_logger.log_every(data_loader, print_freq, header):
         samples = samples.to(device)
         targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
@@ -46,18 +41,6 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         weight_dict = criterion.weight_dict
         
         losses = sum(loss_dict[k] * weight_dict[k] for k in loss_dict.keys() if k in weight_dict)
-
-        #clusters = outputs['cl_size']
-        #clusters = (clusters-np.min(clusters))/(np.max(clusters)-np.min(clusters))
-        #n_objs = (n_objs-np.min(n_objs))/(np.max(n_objs)-np.min(n_objs))
-
-        #mag1 = np.sqrt(clusters.dot(clusters))
-        #mag2 = np.sqrt(n_objs.dot(n_objs))
-
-        #entropy_clusters = np.hstack((entropy_clusters, clusters))
-        #gt_objs = np.hstack((gt_objs, np.array(n_objs)))
-
-        #imilarities_batch.append(np.dot(clusters, n_objs)/(mag1*mag2))
 
         # reduce losses over all GPUs for logging purposes
         loss_dict_reduced = utils.reduce_dict(loss_dict)
@@ -75,18 +58,10 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
             sys.exit(1)
 
         optimizer.zero_grad()
-        #with torch.autograd.detect_anomaly():
-            #losses.backward()
         losses.backward()
         if max_norm > 0:
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm)
         optimizer.step()
-
-        for param in model.parameters():
-            if param.grad is not None:
-                grad_norm = param.grad.data.norm(2).item()
-                if grad_norm > 1e5:  # Set an appropriate threshold
-                    print(f"Warning: Exploding gradient detected! Norm: {grad_norm}")
         #global_step+=1
 
         metric_logger.update(loss=loss_value, **loss_dict_reduced_scaled, **loss_dict_reduced_unscaled)

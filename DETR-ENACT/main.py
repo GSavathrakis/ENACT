@@ -22,7 +22,7 @@ from models import build_model
 
 def get_args_parser():
     parser = argparse.ArgumentParser('Set transformer detector', add_help=False)
-    parser.add_argument('--lr', default=5e-5, type=float)
+    parser.add_argument('--lr', default=1e-4, type=float)
     parser.add_argument('--lr_backbone', default=1e-5, type=float)
     parser.add_argument('--batch_size', default=2, type=int)
     parser.add_argument('--weight_decay', default=1e-4, type=float)
@@ -124,8 +124,6 @@ def main(args):
     np.random.seed(seed)
     random.seed(seed)
 
-    global_step=0
-
     model, criterion, postprocessors = build_model(args)
     model.to(device)
 
@@ -202,7 +200,7 @@ def main(args):
         if args.distributed:
             sampler_train.set_epoch(epoch)
         train_stats = train_one_epoch(
-            model, criterion, data_loader_train, optimizer, device, epoch, global_step,
+            model, criterion, data_loader_train, optimizer, device, epoch,
             args.clip_max_norm)
         lr_scheduler.step()
         if args.output_dir:

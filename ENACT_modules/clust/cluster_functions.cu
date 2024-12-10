@@ -1,9 +1,10 @@
 #include <iostream>
 #include <cmath>
 #include <cuda_runtime.h>
-//#include <ATen/ATen.h>
+//#include <float.h>
 #include <torch/extension.h>
 #include "clust_func.h"
+
 using namespace std;
 
 __global__ void clustering(const float* Keys, const float* Values, const float* entropy, const int* entropy_step, const int* start_inds, const int* sizes, const int num_clusters, const int feature_dims, float* Keys_cl, float* Values_cl){

@@ -8,6 +8,7 @@ import ENACT
 import numpy as np
 import matplotlib.pyplot as plt
 import time
+import math
 
 #torch.autograd.set_detect_anomaly(True)
 
@@ -57,23 +58,6 @@ class ClustAttn(nn.Module):
         k = k.flatten(0,1)
         v = v.flatten(0,1)
 
-        if torch.isnan(q).any():
-            print(f"NaN detected in q layer {n_layer}")
-        if torch.isinf(q).any():
-            print(f"Inf detected in q layer {n_layer}")
-        if torch.isnan(k).any():
-            print(f"NaN detected in k layer {n_layer}")
-        if torch.isinf(k).any():
-            print(f"Inf detected in k layer {n_layer}")
-        if torch.isnan(v).any():
-            print(f"NaN detected in v layer {n_layer}")
-        if torch.isinf(v).any():
-            print(f"Inf detected in v layer {n_layer}")
-        if torch.isnan(entropy).any():
-            print(f"NaN detected in entropy layer {n_layer}")
-        if torch.isinf(entropy).any():
-            print(f"Inf detected in entropy layer {n_layer}")
-
         aux = torch.sign(entropy_step)  # Convert elements to +1 or -1 based on their sign
         aux = aux[1:] != aux[:-1]  # Identify where sign changes
         start_indices = torch.cat((torch.tensor([0]).to(self.device), torch.nonzero(aux, as_tuple=True)[0] + 1))
@@ -86,10 +70,16 @@ class ClustAttn(nn.Module):
 
         k_cl, v_cl = CLUSTFunction.apply(k, v, entropy, entropy_step, start_indices, region_lengths)
 
-        region_lengths = region_lengths*self.n_heads
-        start_inds = copy.deepcopy(torch.cumsum(region_lengths, 0))
+        n_clusts = torch.cumsum(region_lengths, dim=0)
+        n_clusts = torch.where(n_clusts%spat==0)
+        n_clusts = torch.diff(torch.cat((torch.tensor([0]).to('cuda'), n_clusts[0]+1)))
+
+        n_clusts = n_clusts.repeat(self.n_heads).to(torch.int32)
+        start_inds = copy.deepcopy(torch.cumsum(n_clusts, 0))
         start_inds = torch.cat((torch.tensor([0]).to(self.device), start_inds))#start_inds.insert(0,0)
         start_inds = start_inds[:-1].to(torch.int32)
+
+
         
         """
         k = k.flatten(0,1)
@@ -106,24 +96,14 @@ class ClustAttn(nn.Module):
         k_cl = self.W_k(k_cl)
         v_cl  = self.W_v(v_cl)
         
-        q = q.view(bs, spat, self.n_heads, feats//self.n_heads).permute(2, 0, 1, 3)
+        q = q.view(bs, spat, self.n_heads, feats//self.n_heads).permute(2, 0, 1, 3).flatten(0,1)
         k_cl = k_cl.view(-1, self.n_heads, feats//self.n_heads).permute(1, 0, 2).flatten(0,1)
         v_cl = v_cl.view(-1, self.n_heads, feats//self.n_heads).permute(1, 0, 2).flatten(0,1)
 
-        if torch.isnan(k_cl).any():
-            print(f"NaN detected in k_cl layer {n_layer}")
-        if torch.isinf(k_cl).any():
-            print(f"Inf detected in k_cl layer {n_layer}")
-        if torch.isnan(v_cl).any():
-            print(f"NaN detected in v_cl layer {n_layer}")
-        if torch.isinf(v_cl).any():
-            print(f"Inf detected in v_cl layer {n_layer}")
+            
+        attention = ATTNFunction.apply(q, k_cl, v_cl, start_inds, n_clusts)
 
-        try:    
-            attention = ATTNFunction.apply(q, k_cl, v_cl, start_inds, region_lengths)
-        except RuntimeError:
-            print(q, k_cl, v_cl)
-
+        attention = attention.view(self.n_heads, bs, spat, feats//self.n_heads)
         attention = attention.permute(1,2,0,3)
         attention = attention.flatten(2,3)
         attention = attention.permute(1,0,2)
@@ -189,20 +169,12 @@ class CLUSTFunction(torch.autograd.Function):
         ent_step = ctx.ent_step
         st_inds = ctx.st_inds
         reg_l = ctx.reg_l
+        if torch.isnan(grad_k_cl).any():
+            print("NaN detected in grad_k_cl")
+        if torch.isnan(grad_v_cl).any():
+            print("NaN detected in grad_v_cl")
         grad_k, grad_v, grad_entr = ENACT.enact_cluster_backward(grad_k_cl, grad_v_cl, k, v, ent, ent_step, st_inds, reg_l)
         grad_entr = grad_entr.sum(-1)
-        if torch.isnan(grad_k).any():
-            print("NaN detected in grad_k")
-        if torch.isinf(grad_k).any():
-            print("Inf detected in grad_k")
-        if torch.isnan(grad_v).any():
-            print("NaN detected in grad_v")
-        if torch.isinf(grad_v).any():
-            print("Inf detected in grad_v")
-        if torch.isnan(grad_entr).any():
-            print("NaN detected in grad_entr")
-        if torch.isinf(grad_entr).any():
-            print("Inf detected in grad_entr")
         #torch.cuda.synchronize()
         return grad_k, grad_v, grad_entr, None, None, None
 
@@ -212,20 +184,19 @@ class ATTNFunction(torch.autograd.Function):
         
         ctx.start_indices = start_indices
         ctx.cl_sizes = cl_sizes
+        if torch.isnan(qs).any():
+            print("NaN detected in qs")
+        if torch.isnan(clust_ks).any():
+            print("NaN detected in clust_ks")
+        if torch.isnan(clust_vs).any():
+            print("NaN detected in clust_vs")
 
-        num_heads = qs.shape[0]
-        batch_size = qs.shape[1]
-        spatial_dims = qs.shape[2]
-        feature_dims = qs.shape[3]
-        concat_spatial_dims = clust_ks.shape[0]
-
-        output = torch.zeros(qs.shape, dtype=torch.float, device=qs.device)
-        soft_attn_w = torch.zeros((spatial_dims, concat_spatial_dims), dtype=torch.float, device=qs.device)
-        attn_w = torch.zeros((spatial_dims, concat_spatial_dims), dtype=torch.float, device=qs.device)
+        output, soft_attn_w = ENACT.forward_mhsa(qs, clust_ks, clust_vs, start_indices, cl_sizes)
+        if torch.isnan(soft_attn_w).any():
+            print("NaN detected in soft_attn_w")
+        if torch.isnan(output).any():
+            print("NaN detected in output")
         
-        ENACT.qk_product(qs, clust_ks, start_indices, cl_sizes, num_heads, batch_size, spatial_dims, feature_dims, concat_spatial_dims, attn_w)
-        ENACT.soft(attn_w, start_indices, cl_sizes, num_heads, batch_size, spatial_dims, concat_spatial_dims, soft_attn_w)
-        ENACT.attn(soft_attn_w, clust_vs, start_indices, cl_sizes, num_heads, batch_size, spatial_dims, concat_spatial_dims, feature_dims, output)
         #torch.cuda.synchronize()
         ctx.save_for_backward(qs, clust_ks, clust_vs, soft_attn_w)
 
@@ -239,11 +210,17 @@ class ATTNFunction(torch.autograd.Function):
         start_indices = ctx.start_indices
         cl_sizes = ctx.cl_sizes
 
+        """
         num_heads = grad_output.shape[0]
         batch_size = grad_output.shape[1]
         spatial_dims = grad_output.shape[2]
         feature_dims = grad_output.shape[3]
         concat_spatial_dims = clust_ks.shape[0]
+
+        if torch.isnan(grad_output).any():
+            print("NaN detected in grad_output")
+        if torch.isnan(soft_attn_w).any():
+            print("NaN detected in soft_attn_w")
         
         grad_soft_attn_w = torch.zeros(soft_attn_w.shape, dtype=torch.float, device=qs.device)
         grad_attn_w = torch.zeros(soft_attn_w.shape, dtype=torch.float, device=qs.device)
@@ -256,24 +233,16 @@ class ATTNFunction(torch.autograd.Function):
         ENACT.Jacobian(grad_soft_attn_w, soft_attn_w, start_indices, cl_sizes, num_heads, batch_size, spatial_dims, concat_spatial_dims, grad_attn_w)
         ENACT.grad_Queries(grad_attn_w, clust_ks, start_indices, cl_sizes, num_heads, batch_size, spatial_dims, concat_spatial_dims, feature_dims, grad_qs)
         ENACT.grad_Keys(grad_attn_w, qs, start_indices, cl_sizes, num_heads, batch_size, spatial_dims, concat_spatial_dims, feature_dims, grad_ks)
-        
-        #ENACT.backward_mhsa(grad_output, soft_attn_w, qs, clust_ks, clust_vs, start_indices, cl_sizes,
-                            #grad_soft_attn_w, grad_attn_w, grad_vs, grad_qs, grad_ks)
-        
+        """
+        if torch.isnan(grad_output).any():
+            print("NaN detected in grad_output")
+        grad_qs, grad_ks, grad_vs = ENACT.backward_mhsa(grad_output, soft_attn_w, qs, clust_ks, clust_vs, start_indices, cl_sizes)
         if torch.isnan(grad_qs).any():
             print("NaN detected in grad_qs")
-            print(grad_output.shape, grad_qs.shape)
-            print(grad_output)
-        if torch.isinf(grad_qs).any():
-            print("Inf detected in grad_qs")
         if torch.isnan(grad_ks).any():
             print("NaN detected in grad_ks")
-        if torch.isinf(grad_ks).any():
-            print("Inf detected in grad_ks")
         if torch.isnan(grad_vs).any():
-            print("NaN detected in grad_vs")
-        if torch.isinf(grad_vs).any():
-            print("Inf detected in grad_vs")
+            print("NaN detected in grad_ks")
         #torch.cuda.synchronize()
         
         #print(f"Time lapsed backward:{end_time-start_time}")
