@@ -23,17 +23,17 @@ __global__ void softmax(const float* tensor, const int n_heads_bs, const int* st
 
     if (id1 < spat1 && bs_n_heads<n_heads_bs){
         float sum=0.;
-        /*float maxx = tensor[id1*spat2+start_inds[bs_n_heads]];
+        float maxx = tensor[id1*spat2+start_inds[bs_n_heads]];
         for (int s=start_inds[bs_n_heads]+1; s<start_inds[bs_n_heads]+sizes[bs_n_heads]; s++){
             if (tensor[id1*spat2+s]>maxx){
                 maxx = tensor[id1*spat2+s];
             }
-        }*/
-        for (int s=start_inds[bs_n_heads]; s<start_inds[bs_n_heads]+sizes[bs_n_heads]; s++){
-            sum+=exp(tensor[id1*spat2+s]);
         }
         for (int s=start_inds[bs_n_heads]; s<start_inds[bs_n_heads]+sizes[bs_n_heads]; s++){
-            soft[id1*spat2+s] = exp(tensor[id1*spat2+s])/sum;
+            sum+=exp(tensor[id1*spat2+s]-maxx);
+        }
+        for (int s=start_inds[bs_n_heads]; s<start_inds[bs_n_heads]+sizes[bs_n_heads]; s++){
+            soft[id1*spat2+s] = exp(tensor[id1*spat2+s]-maxx)/sum;
         }
     }
 }

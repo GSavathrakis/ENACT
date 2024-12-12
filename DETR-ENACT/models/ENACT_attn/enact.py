@@ -20,11 +20,13 @@ class ClustAttn(nn.Module):
         self.gaussian_kernel = (1./(sigma*torch.sqrt(torch.Tensor([2*np.pi]))))*torch.exp(-torch.pow(torch.arange(-(3*sigma-1),3*sigma), 2)/(2*torch.pow(torch.Tensor([sigma]),2)))
         self.Sobel_2der = torch.Tensor([-1., 2., -1.])
         self.base = torch.Tensor([2])
+
+        #self.conv_q = nn.Conv2d(d_model, d_model, )
         
-        self.W_q = nn.Linear(d_model, d_model)
-        self.W_k = nn.Linear(d_model, d_model)
-        self.W_v = nn.Linear(d_model, d_model)
-        self.W_o = nn.Linear(d_model, d_model)
+        self.W_q = nn.Linear(d_model//n_heads, d_model//n_heads)
+        self.W_k = nn.Linear(d_model//n_heads, d_model//n_heads)
+        self.W_v = nn.Linear(d_model//n_heads, d_model//n_heads)
+        self.W_o = nn.Linear(d_model//n_heads, d_model//n_heads)
 
         self.W_prob = nn.Linear(d_model, 1)
 
@@ -92,22 +94,21 @@ class ClustAttn(nn.Module):
         sizes = sizes.tolist()
         """
 
-        q = self.W_q(q)
-        k_cl = self.W_k(k_cl)
-        v_cl  = self.W_v(v_cl)
-        
         q = q.view(bs, spat, self.n_heads, feats//self.n_heads).permute(2, 0, 1, 3).flatten(0,1)
         k_cl = k_cl.view(-1, self.n_heads, feats//self.n_heads).permute(1, 0, 2).flatten(0,1)
         v_cl = v_cl.view(-1, self.n_heads, feats//self.n_heads).permute(1, 0, 2).flatten(0,1)
 
+        q = self.W_q(q)
+        k_cl = self.W_k(k_cl)
+        v_cl  = self.W_v(v_cl)
             
         attention = ATTNFunction.apply(q, k_cl, v_cl, start_inds, n_clusts)
 
         attention = attention.view(self.n_heads, bs, spat, feats//self.n_heads)
+        attention = self.W_o(attention)
         attention = attention.permute(1,2,0,3)
         attention = attention.flatten(2,3)
         attention = attention.permute(1,0,2)
-        attention = self.W_o(attention)
         end_time = time.time()
         #print(f"Time lapsed forward:{end_time-start_time}")
 
@@ -157,6 +158,10 @@ class CLUSTFunction(torch.autograd.Function):
         ctx.reg_l = reg_l
         
         k_cl, v_cl = ENACT.enact_cluster_forward(k, v, ent, ent_step, st_inds, reg_l)
+        if torch.isnan(k_cl).any():
+            print("NaN detected in k_cl")
+        if torch.isnan(v_cl).any():
+            print("NaN detected in v_cl")
         #torch.cuda.synchronize()
         ctx.save_for_backward(k, v, ent)
 
@@ -192,10 +197,17 @@ class ATTNFunction(torch.autograd.Function):
             print("NaN detected in clust_vs")
 
         output, soft_attn_w = ENACT.forward_mhsa(qs, clust_ks, clust_vs, start_indices, cl_sizes)
+        """
+        prod = torch.matmul(qs[6], clust_ks[start_indices[6]:start_indices[6]+cl_sizes[6]].transpose(0,1))/math.sqrt(qs.shape[2])
+        test_attn_w = F.softmax(prod, -1)
+        print('-----------------')
+        print(soft_attn_w[:,start_indices[6]:start_indices[6]+cl_sizes[6]])
+        print(test_attn_w)
         if torch.isnan(soft_attn_w).any():
             print("NaN detected in soft_attn_w")
         if torch.isnan(output).any():
             print("NaN detected in output")
+        """
         
         #torch.cuda.synchronize()
         ctx.save_for_backward(qs, clust_ks, clust_vs, soft_attn_w)
