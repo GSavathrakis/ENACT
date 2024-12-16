@@ -16,7 +16,7 @@ __global__ void attention_weights(const float* queries, const float* keys, const
     }
 }
 
-__global__ void softmax(const float* tensor, const int n_heads_bs, const int* start_inds, const int* sizes, const int spat1, const int spat2, float* soft){
+__global__ void softmax(float* tensor, const int n_heads_bs, const int* start_inds, const int* sizes, const int spat1, const int spat2){
 
     int bs_n_heads = blockIdx.y;
     int id1 = blockIdx.x*blockDim.x + threadIdx.x;
@@ -33,7 +33,7 @@ __global__ void softmax(const float* tensor, const int n_heads_bs, const int* st
             sum+=exp(tensor[id1*spat2+s]-maxx);
         }
         for (int s=start_inds[bs_n_heads]; s<start_inds[bs_n_heads]+sizes[bs_n_heads]; s++){
-            soft[id1*spat2+s] = exp(tensor[id1*spat2+s]-maxx)/sum;
+            tensor[id1*spat2+s] = exp(tensor[id1*spat2+s]-maxx)/sum;
         }
     }
 }

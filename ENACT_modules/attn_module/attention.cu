@@ -1,7 +1,6 @@
 #include <iostream>
 #include <cmath>
 #include <cuda_runtime.h>
-//#include <ATen/ATen.h>
 #include <torch/extension.h>
 #include "attention.h"
 #include "ops/ops.h"
@@ -15,7 +14,7 @@ vector<torch::Tensor> forward_mhsa(const torch::Tensor Queries, const torch::Ten
     // Values shape:  concatenated spatial dims along batch size and num heads x feature dimensions
 
     torch::Tensor attn_ws = torch::zeros({Queries.size(1), Keys.size(0)}, Queries.options());
-    torch::Tensor soft_attn_ws = torch::zeros({Queries.size(1), Keys.size(0)}, Queries.options());
+    //torch::Tensor soft_attn_ws = torch::zeros({Queries.size(1), Keys.size(0)}, Queries.options());
 
     int nh_bs = Queries.size(0);
     int spatial_size = Queries.size(1);
@@ -34,16 +33,16 @@ vector<torch::Tensor> forward_mhsa(const torch::Tensor Queries, const torch::Ten
     attention_weights<<<numBlocks_attn_ws, threadsPerBlock_attn_ws>>>(Queries.data_ptr<float>(), Keys.data_ptr<float>(), nh_bs, spatial_size, clust_start_inds.data_ptr<int>(), clust_sizes.data_ptr<int>(), concat_spatial_dims, feature_dims, attn_ws.data_ptr<float>());
     attn_ws = attn_ws/sqrt(feature_dims);
 
-    int n_threads_soft_attn_ws = 1024;
+    //int n_threads_soft_attn_ws = 1024;
 
-    int n_blocks_soft_attn_ws_x = (spatial_size + n_threads_soft_attn_ws - 1)/n_threads_soft_attn_ws + 1;
-    int n_blocks_soft_attn_ws_y = nh_bs + 1;
+    n_blocks_attn_ws_x = (spatial_size + 1024 - 1)/1024 + 1;
+    n_blocks_attn_ws_y = nh_bs + 1;
     
-    dim3 numBlocks_soft_attn_ws(n_blocks_soft_attn_ws_x, n_blocks_soft_attn_ws_y);
-    dim3 threadsPerBlock_soft_attn_ws(n_threads_soft_attn_ws, 1);
-    softmax<<<numBlocks_soft_attn_ws, threadsPerBlock_soft_attn_ws>>>(attn_ws.data_ptr<float>(), nh_bs, clust_start_inds.data_ptr<int>(), clust_sizes.data_ptr<int>(), spatial_size, concat_spatial_dims, soft_attn_ws.data_ptr<float>());
+    numBlocks_attn_ws = dim3(n_blocks_attn_ws_x, n_blocks_attn_ws_y);
+    threadsPerBlock_attn_ws = dim3(1024, 1);
+    softmax<<<numBlocks_attn_ws, threadsPerBlock_attn_ws>>>(attn_ws.data_ptr<float>(), nh_bs, clust_start_inds.data_ptr<int>(), clust_sizes.data_ptr<int>(), spatial_size, concat_spatial_dims);
     
-    torch::Tensor attn = torch::zeros({Queries.size(0), soft_attn_ws.size(0), Values.size(1)}, Queries.options());
+    torch::Tensor attn = torch::zeros({Queries.size(0), attn_ws.size(0), Values.size(1)}, Queries.options());
 
     int n_threads_attn_x = 32;
     int n_threads_attn_y = 32;
@@ -54,10 +53,10 @@ vector<torch::Tensor> forward_mhsa(const torch::Tensor Queries, const torch::Ten
 
     dim3 numBlocks_attn(n_blocks_attn_x, n_blocks_attn_y, batch_attn);
     dim3 threadsPerBlock_attn(n_threads_attn_x, n_threads_attn_y);
-    attention<<<numBlocks_attn, threadsPerBlock_attn>>>(soft_attn_ws.data_ptr<float>(), Values.data_ptr<float>(), nh_bs, clust_start_inds.data_ptr<int>(), clust_sizes.data_ptr<int>(), spatial_size, concat_spatial_dims, feature_dims, attn.data_ptr<float>());
+    attention<<<numBlocks_attn, threadsPerBlock_attn>>>(attn_ws.data_ptr<float>(), Values.data_ptr<float>(), nh_bs, clust_start_inds.data_ptr<int>(), clust_sizes.data_ptr<int>(), spatial_size, concat_spatial_dims, feature_dims, attn.data_ptr<float>());
 
     return{
-        attn, soft_attn_ws
+        attn, attn_ws
     };
 
 }

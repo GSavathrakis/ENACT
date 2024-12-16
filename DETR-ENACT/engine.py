@@ -10,12 +10,30 @@ import os
 import sys
 from typing import Iterable
 import numpy as np
+import subprocess
 
 import torch
 
 import util.misc as utils
 from datasets.coco_eval import CocoEvaluator
 from datasets.panoptic_eval import PanopticEvaluator
+
+def print_mem_usage(dev_id):
+    result = subprocess.run(
+        ["nvidia-smi", "-i", str(dev_id), "--query-gpu=memory.used", "--format=csv,noheader,nounits"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
+
+    # Check if there was an error
+    if result.returncode != 0:
+        print("Error running nvidia-smi:", result.stderr)
+        #return None
+        
+    # Parse the memory usage in MB
+    memory_used_mb = int(result.stdout.strip())
+    return memory_used_mb
 
 
 def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
@@ -29,6 +47,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
     header = 'Epoch: [{}]'.format(epoch)
     print_freq = 100
 
+    n=0
     for samples, targets in metric_logger.log_every(data_loader, print_freq, header):
         samples = samples.to(device)
         targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
@@ -67,9 +86,15 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         metric_logger.update(loss=loss_value, **loss_dict_reduced_scaled, **loss_dict_reduced_unscaled)
         metric_logger.update(class_error=loss_dict_reduced['class_error'])
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
-    #np.save(f'n_clusts/n_clusters_epoch_{epoch}', entropy_clusters)
-    #np.save(f'gt_n_objs/gt_n_objs_epoch_{epoch}', gt_objs)
-    #np.save(f'sim_cl_gt/similarity_clust_n_gt_epoch_{epoch}', np.array(similarities_batch))
+
+        if (n>0 and n%print_freq==0):
+            f = open("/workspace1/DETR-ENACT/gpu_enact_s3.txt", "a")
+            mm = print_mem_usage(0)
+            f.write(str(mm) + '\n')
+            f.close()
+            torch.cuda.empty_cache()
+        n+=1
+
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
     print("Averaged stats:", metric_logger)

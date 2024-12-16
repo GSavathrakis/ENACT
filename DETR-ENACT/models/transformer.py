@@ -136,7 +136,7 @@ class TransformerEncoderLayer(nn.Module):
     def __init__(self, device, sigma, d_model, nhead, dim_feedforward=2048, dropout=0.1,
                  activation="relu", normalize_before=False):
         super().__init__()
-        self.self_attn = ClustAttn(sigma, d_model, dropout, nhead, device)
+        self.self_attn = ClustAttn(sigma, d_model, nhead, device)
         # Implementation of Feedforward model
 
         self.dropout1 = nn.Dropout(dropout)

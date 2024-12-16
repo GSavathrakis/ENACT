@@ -26,22 +26,7 @@ if version.parse(torchvision.__version__) < version.parse('0.7'):
     from torchvision.ops import _new_empty_tensor
     from torchvision.ops.misc import _output_size
 
-def print_mem_usage(dev_id):
-    result = subprocess.run(
-        ["nvidia-smi", "-i", str(dev_id), "--query-gpu=memory.used", "--format=csv,noheader,nounits"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True
-    )
 
-    # Check if there was an error
-    if result.returncode != 0:
-        print("Error running nvidia-smi:", result.stderr)
-        #return None
-        
-    # Parse the memory usage in MB
-    memory_used_mb = int(result.stdout.strip())
-    return memory_used_mb
 
 
 class SmoothedValue(object):
@@ -228,7 +213,8 @@ class MetricLogger(object):
                 '{meters}',
                 'time: {time}',
                 'data: {data}',
-                'max mem: {memory:.0f}'
+                'max mem: {memory:.0f}',
+                'res mem: {reserved:.0f}'
             ])
         else:
             log_msg = self.delimiter.join([
@@ -248,25 +234,18 @@ class MetricLogger(object):
                 eta_seconds = iter_time.global_avg * (len(iterable) - i)
                 eta_string = str(datetime.timedelta(seconds=int(eta_seconds)))
                 if torch.cuda.is_available():
-                    f = open("/workspace1/DETR-ENACT/times_enact.txt", "a")
+                    f = open("/workspace1/DETR-ENACT/times_enact_s3.txt", "a")
                     f.write(str(iter_time) + '\n')
-                    f.close()
-                    f = open("/workspace1/DETR-ENACT/gpu_enact.txt", "a")
-                    mm = print_mem_usage(0)
-                    f.write(str(mm) + '\n')
                     f.close()
                     print(log_msg.format(
                         i, len(iterable), eta=eta_string,
                         meters=str(self),
                         time=str(iter_time), data=str(data_time),
-                        memory=torch.cuda.max_memory_allocated() / MB))
+                        memory=torch.cuda.max_memory_allocated() / MB,
+                        reserved = torch.cuda.memory_reserved() / MB))
                 else:
-                    f = open("/workspace1/DETR-ENACT/times_enact.txt", "a")
+                    f = open("/workspace1/DETR-ENACT/times_enact_s3.txt", "a")
                     f.write(str(iter_time) + '\n')
-                    f.close()
-                    f = open("/workspace1/DETR-ENACT/gpu_enact.txt", "a")
-                    mm = print_mem_usage(0)
-                    f.write(str(mm) + '\n')
                     f.close()
                     print(log_msg.format(
                         i, len(iterable), eta=eta_string,
@@ -321,7 +300,7 @@ class NestedTensor(object):
         self.mask = mask
 
     def to(self, device):
-        # type: (Device) -> NestedTensor # noqa
+        ## type: (Device) -> NestedTensor # noqa
         cast_tensor = self.tensors.to(device)
         mask = self.mask
         if mask is not None:
