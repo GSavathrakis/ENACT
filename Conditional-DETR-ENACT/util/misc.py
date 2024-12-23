@@ -30,6 +30,23 @@ if float(torchvision.__version__.split(".")[1]) < 7.0:
     from torchvision.ops import _new_empty_tensor
     from torchvision.ops.misc import _output_size
 
+def print_mem_usage(dev_id):
+    result = subprocess.run(
+        ["nvidia-smi", "-i", str(dev_id), "--query-gpu=memory.used", "--format=csv,noheader,nounits"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
+
+    # Check if there was an error
+    if result.returncode != 0:
+        print("Error running nvidia-smi:", result.stderr)
+        #return None
+        
+    # Parse the memory usage in MB
+    memory_used_mb = int(result.stdout.strip())
+    return memory_used_mb
+
 
 class SmoothedValue(object):
     """Track a series of values and provide access to smoothed values over a
@@ -235,12 +252,26 @@ class MetricLogger(object):
                 eta_seconds = iter_time.global_avg * (len(iterable) - i)
                 eta_string = str(datetime.timedelta(seconds=int(eta_seconds)))
                 if torch.cuda.is_available():
+                    f = open("/workspace1/DETR-ENACT/times_conddetr_enact_s5.txt", "a")
+                    f.write(str(iter_time) + '\n')
+                    f.close()
+                    f = open("/workspace1/DETR-ENACT/gpu_conddetr_enact_s5.txt", "a")
+                    mm = print_mem_usage(2)
+                    f.write(str(mm) + '\n')
+                    f.close()
                     print(log_msg.format(
                         i, len(iterable), eta=eta_string,
                         meters=str(self),
                         time=str(iter_time), data=str(data_time),
                         memory=torch.cuda.max_memory_allocated() / MB))
                 else:
+                    f = open("/workspace1/DETR-ENACT/times_conddetr_enact_s5.txt", "a")
+                    f.write(str(iter_time) + '\n')
+                    f.close()
+                    f = open("/workspace1/DETR-ENACT/gpu_conddetr_enact_s5.txt", "a")
+                    mm = print_mem_usage(2)
+                    f.write(str(mm) + '\n')
+                    f.close()
                     print(log_msg.format(
                         i, len(iterable), eta=eta_string,
                         meters=str(self),

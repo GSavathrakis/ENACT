@@ -23,7 +23,39 @@ from torch.nn import grad  # noqa: F401
 
 from torch._jit_internal import boolean_dispatch, List, Optional, _overload
 
+import ENACT
+
 Tensor = torch.Tensor
+
+class ATTNFunction(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, q_row, q_col, k_row, k_col, v, start_indices, cl_sizes, dropout_p, training):
+
+        ctx.start_indices = start_indices
+        ctx.cl_sizes = cl_sizes
+
+        num_heads = q_row.shape[0]
+        batch_size = q_row.shape[1]
+
+        attn_w_row = ENACT.forward_rcda_w(q_row, k_row, start_indices, cl_sizes)
+        attn_w_col = ENACT.forward_rcda_w(q_col, k_col, start_indices, cl_sizes)
+
+        attn_w_col = dropout(attn_w_col, p=dropout_p, training=training)
+        attn_w_row = dropout(attn_w_row, p=dropout_p, training=training)
+
+        attn_w_col = attn_w_col.unsqueeze(2)
+        attn_w_row = attn_w_row.unsqueeze(1)
+        attn_w = attn_w_col*attn_w_row
+        attn_w = attn_w.flatten(0,1)
+        
+        attn = ENACT.forward_rcda_map(attn_w, v, start_indices, cl_sizes, num_heads*batch_size).view(num_heads, batch_size, )
+
+
+
+
+
+
+
 
 def multi_head_rcda_forward_dec(query_row,  # type: Tensor
                             query_col,  # type: Tensor
@@ -305,13 +337,13 @@ def multi_head_rcda_forward_enc(key_row,  # type: Tensor
 
     Shape:
         Inputs:
-        - query_row: :math:`(N, L, E)` where L is the target sequence length, N is the batch size, E is
+        - key_row: :math:`(N, L, E)` where L is the target sequence length, N is the batch size, E is
           the embedding dimension.
-        - query_col: :math:`(N, L, E)` where L is the target sequence length, N is the batch size, E is
+        - key_col: :math:`(N, L, E)` where L is the target sequence length, N is the batch size, E is
           the embedding dimension.
-        - key_row: :math:`(N, H, W, E)`, where W is the source sequence row length, N is the batch size, E is
+        - query_row: :math:`(N, H, W, E)`, where W is the source sequence row length, N is the batch size, E is
           the embedding dimension.
-        - key_col: :math:`(N, H, W, E)`, where H is the source sequence column length, N is the batch size, E is
+        - query_col: :math:`(N, H, W, E)`, where H is the source sequence column length, N is the batch size, E is
           the embedding dimension.
         - value: :math:`(N, H, W, E)` where HW is the source sequence length, N is the batch size, E is
           the embedding dimension.
@@ -405,6 +437,7 @@ def multi_head_rcda_forward_enc(key_row,  # type: Tensor
         v = v.contiguous().permute(1,0,2).reshape(tgt_len, bsz*num_heads, head_dim).permute(1,0,2)
 
 
+    # FROM HERE
     attn_output_weights_row = torch.bmm(q_row, k_row.transpose(1, 2))
     attn_output_weights_col = torch.bmm(q_col, k_col.transpose(1, 2))
     assert list(attn_output_weights_row.size()) == [bsz * num_heads, src_len_row, tgt_len]
@@ -430,7 +463,7 @@ def multi_head_rcda_forward_enc(key_row,  # type: Tensor
 
     attn_output_weights_col = softmax(attn_output_weights_col, dim=-1)
     attn_output_weights_row = softmax(attn_output_weights_row, dim=-1)
-
+    # TO HERE
     attn_output_weights_col = dropout(attn_output_weights_col, p=dropout_p, training=training)
     attn_output_weights_row = dropout(attn_output_weights_row, p=dropout_p, training=training)
 

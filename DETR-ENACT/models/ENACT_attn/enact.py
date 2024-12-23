@@ -7,8 +7,6 @@ import copy
 import ENACT
 import numpy as np
 import matplotlib.pyplot as plt
-import time
-import math
 
 
 class ClustAttn(nn.Module):

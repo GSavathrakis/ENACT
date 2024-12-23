@@ -182,7 +182,7 @@ class TransformerEncoderLayer(nn.Module):
                  activation="relu", normalize_before=False):
         super().__init__()
         #self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
-        self.self_attn = ClustAttn(sigma, d_model, dropout, nhead, device)
+        self.self_attn = ClustAttn(sigma, d_model, nhead, device)
         # Implementation of Feedforward model
         self.linear1 = nn.Linear(d_model, dim_feedforward)
         self.dropout = nn.Dropout(dropout)

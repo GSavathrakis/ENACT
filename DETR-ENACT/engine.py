@@ -87,8 +87,8 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         metric_logger.update(class_error=loss_dict_reduced['class_error'])
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
 
-        if (n>0 and n%print_freq==0):
-            f = open("/workspace1/DETR-ENACT/gpu_enact_s3.txt", "a")
+        if (n%print_freq==0):
+            f = open("/workspace1/DETR-ENACT/gpu_enact_s5.txt", "a")
             mm = print_mem_usage(0)
             f.write(str(mm) + '\n')
             f.close()
@@ -122,6 +122,7 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
             output_dir=os.path.join(output_dir, "panoptic_eval"),
         )
 
+    n=0
     for samples, targets in metric_logger.log_every(data_loader, 100, header):
         samples = samples.to(device)
         targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
@@ -140,6 +141,12 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
                              **loss_dict_reduced_scaled,
                              **loss_dict_reduced_unscaled)
         metric_logger.update(class_error=loss_dict_reduced['class_error'])
+        if (n%100==0):
+            f = open("/workspace1/DETR-ENACT/gpu_enact_s5.txt", "a")
+            mm = print_mem_usage(0)
+            f.write(str(mm) + '\n')
+            f.close()
+        n+=1
 
         orig_target_sizes = torch.stack([t["orig_size"] for t in targets], dim=0)
         results = postprocessors['bbox'](outputs, orig_target_sizes)

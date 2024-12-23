@@ -234,7 +234,7 @@ class MetricLogger(object):
                 eta_seconds = iter_time.global_avg * (len(iterable) - i)
                 eta_string = str(datetime.timedelta(seconds=int(eta_seconds)))
                 if torch.cuda.is_available():
-                    f = open("/workspace1/DETR-ENACT/times_enact_s3.txt", "a")
+                    f = open("/workspace1/DETR-ENACT/times_enact_s5.txt", "a")
                     f.write(str(iter_time) + '\n')
                     f.close()
                     print(log_msg.format(
@@ -244,7 +244,7 @@ class MetricLogger(object):
                         memory=torch.cuda.max_memory_allocated() / MB,
                         reserved = torch.cuda.memory_reserved() / MB))
                 else:
-                    f = open("/workspace1/DETR-ENACT/times_enact_s3.txt", "a")
+                    f = open("/workspace1/DETR-ENACT/times_enact_s5.txt", "a")
                     f.write(str(iter_time) + '\n')
                     f.close()
                     print(log_msg.format(
