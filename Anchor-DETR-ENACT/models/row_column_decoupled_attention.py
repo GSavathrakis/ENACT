@@ -15,6 +15,7 @@ from torch.nn.init import xavier_normal_
 from torch.nn.parameter import Parameter
 from torch.nn.modules import Module
 from torch.nn import functional as F
+from torch.autograd.function import once_differentiable
 
 
 import torch
@@ -34,8 +35,7 @@ class ATTNFunction(torch.autograd.Function):
         ctx.start_indices = start_indices
         ctx.cl_sizes = cl_sizes
 
-        num_heads = q_row.shape[0]
-        batch_size = q_row.shape[1]
+        nh_bs = q_row.shape[0]
 
         attn_w_row = ENACT.forward_rcda_w(q_row, k_row, start_indices, cl_sizes)
         attn_w_col = ENACT.forward_rcda_w(q_col, k_col, start_indices, cl_sizes)
@@ -43,19 +43,43 @@ class ATTNFunction(torch.autograd.Function):
         attn_w_col = dropout(attn_w_col, p=dropout_p, training=training)
         attn_w_row = dropout(attn_w_row, p=dropout_p, training=training)
 
-        attn_w_col = attn_w_col.unsqueeze(2)
+        attn_w_col = attn_w_col.unsqueeze(0)
         attn_w_row = attn_w_row.unsqueeze(1)
-        attn_w = attn_w_col*attn_w_row
+        attn_w = attn_w_row*attn_w_col
         attn_w = attn_w.flatten(0,1)
         
-        attn = ENACT.forward_rcda_map(attn_w, v, start_indices, cl_sizes, num_heads*batch_size).view(num_heads, batch_size, )
+        attn = ENACT.forward_rcda_map(attn_w, v, start_indices, cl_sizes, nh_bs)#.view(num_heads, batch_size, q_col.shape[2], q_row.shape[2], q_row.shape[3]).permute(0,2,3,1,4).flatten(3,4)
 
+        ctx.save_for_backward(q_row, q_col, k_row, k_col, v, attn_w_col, attn_w_row, attn_w)
 
+        return attn
+    
+    @staticmethod
+    @once_differentiable
+    def backward(ctx, grad_output):
 
+        q_row, q_col, k_row, k_col, v, attn_w, attn_w_col, attn_w_row = ctx.saved_tensors
+        start_indices = ctx.start_indices
+        cl_sizes = ctx.cl_sizes
 
+        nh_bs = grad_output.shape[0]
+        H = q_row.shape[2]
+        W = q_col.shape[2]
+        feature_dims = v.shape[1]
 
+        #grad_output = grad_output.view(batch_size, H, W, num_heads, feature_dims).permute(3,0,1,2,4).flatten(0,1).flatten(1,2)
+        grad_attn_w, grad_v = ENACT.backward_rcda_map(grad_output, attn_w, v, start_indices, cl_sizes, nh_bs)
+        grad_attn_w = grad_attn_w.view(H,W,feature_dims)
 
+        grad_attn_w_row = torch.sum(grad_attn_w*attn_w_col, dim=1, keepdim=True).squeeze(1)
+        grad_attn_w_col = torch.sum(grad_attn_w*attn_w_row, dim=0, keepdim=True).squeeze(0)
+        attn_w_row = attn_w_row.squeeze(1)
+        attn_w_col = attn_w_col.squeeze(0)
 
+        grad_q_row, grad_k_row = ENACT.backward_rcda_w(grad_attn_w_row, attn_w_row, q_row, k_row, start_indices, cl_sizes)
+        grad_q_col, grad_k_col = ENACT.backward_rcda_w(grad_attn_w_col, attn_w_col, q_col, k_col, start_indices, cl_sizes)
+
+        return grad_q_row, grad_q_col, grad_k_row, grad_k_col, grad_v
 
 def multi_head_rcda_forward_dec(query_row,  # type: Tensor
                             query_col,  # type: Tensor
@@ -438,6 +462,7 @@ def multi_head_rcda_forward_enc(key_row,  # type: Tensor
 
 
     # FROM HERE
+    #DO CLUSTERING HERE FIRST
     attn_output_weights_row = torch.bmm(q_row, k_row.transpose(1, 2))
     attn_output_weights_col = torch.bmm(q_col, k_col.transpose(1, 2))
     assert list(attn_output_weights_row.size()) == [bsz * num_heads, src_len_row, tgt_len]
