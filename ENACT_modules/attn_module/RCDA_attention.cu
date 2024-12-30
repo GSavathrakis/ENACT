@@ -29,7 +29,6 @@ torch::Tensor forward_rcda_w(const torch::Tensor Q, const torch::Tensor K, const
     dim3 numBlocks_attn_ws(n_blocks_attn_ws_x, n_blocks_attn_ws_y, batch_attn_ws);
     dim3 threadsPerBlock_attn_ws(n_threads_attn_ws_x, n_threads_attn_ws_y);
     attention_weights<<<numBlocks_attn_ws, threadsPerBlock_attn_ws>>>(Q.data_ptr<float>(), K.data_ptr<float>(), nh_bs, spatial_size, clust_start_inds.data_ptr<int>(), clust_sizes.data_ptr<int>(), concat_spatial_dims, feature_dims, attn_ws.data_ptr<float>());
-    attn_ws = attn_ws/sqrt(feature_dims);
 
     n_blocks_attn_ws_x = (spatial_size + 1024 - 1)/1024 + 1;
     n_blocks_attn_ws_y = nh_bs + 1;
@@ -61,7 +60,7 @@ torch::Tensor forward_rcda_map(const torch::Tensor weights, const torch::Tensor 
 
     dim3 numBlocks_attn(n_blocks_attn_x, n_blocks_attn_y, batch_attn);
     dim3 threadsPerBlock_attn(n_threads_attn_x, n_threads_attn_y);
-    attention<<<numBlocks_attn, threadsPerBlock_attn>>>(attn_ws.data_ptr<float>(), V.data_ptr<float>(), nh_bs, clust_start_inds.data_ptr<int>(), clust_sizes.data_ptr<int>(), spatial_size, concat_spatial_dims, feature_dims, attn.data_ptr<float>());
+    attention<<<numBlocks_attn, threadsPerBlock_attn>>>(weights.data_ptr<float>(), V.data_ptr<float>(), nh_bs, clust_start_inds.data_ptr<int>(), clust_sizes.data_ptr<int>(), spatial_size, concat_spatial_dims, feature_dims, attn.data_ptr<float>());
 
     return attn;
 }
@@ -105,7 +104,7 @@ vector<torch::Tensor> backward_rcda_map(const torch::Tensor grad_output, const t
 vector<torch::Tensor> backward_rcda_w(const torch::Tensor grad_w, const torch::Tensor w, const torch::Tensor Q, const torch::Tensor K, const torch::Tensor clust_start_inds, const torch::Tensor clust_sizes){
 
     int nh_bs = Q.size(0);
-    int spatial_size = Q.size(1);
+    int spatial_dims = Q.size(1);
     int feature_dims = Q.size(2);
     int concat_spatial_dims = K.size(0);
 
@@ -134,7 +133,6 @@ vector<torch::Tensor> backward_rcda_w(const torch::Tensor grad_w, const torch::T
     dim3 numBlocks_grad_q(n_blocks_grad_q_x, n_blocks_grad_q_y, batch_grad_q);
     dim3 threadsPerBlock_grad_q(n_threads_grad_q_x, n_threads_grad_q_y);
     grad_q<<<numBlocks_grad_q, threadsPerBlock_grad_q>>>(grad_attn_ws.data_ptr<float>(), K.data_ptr<float>(), nh_bs, clust_start_inds.data_ptr<int>(), clust_sizes.data_ptr<int>(), spatial_dims, concat_spatial_dims, feature_dims, grad_queries.data_ptr<float>());
-    grad_queries = grad_queries/sqrt(feature_dims);
 
     torch::Tensor grad_keys = torch::zeros({K.size(0), K.size(1)}, K.options());
 
@@ -148,7 +146,6 @@ vector<torch::Tensor> backward_rcda_w(const torch::Tensor grad_w, const torch::T
     dim3 numBlocks_grad_k(n_blocks_grad_k_x, n_blocks_grad_k_y, batch_grad_k);
     dim3 threadsPerBlock_grad_k(n_threads_grad_k_x, n_threads_grad_k_y);
     grad_k<<<numBlocks_grad_k, threadsPerBlock_grad_k>>>(grad_attn_ws.data_ptr<float>(), Q.data_ptr<float>(), nh_bs, clust_start_inds.data_ptr<int>(), clust_sizes.data_ptr<int>(), concat_spatial_dims, feature_dims, spatial_dims, grad_keys.data_ptr<float>());
-    grad_keys = grad_keys/sqrt(feature_dims);
 
     return{
         grad_queries, grad_keys

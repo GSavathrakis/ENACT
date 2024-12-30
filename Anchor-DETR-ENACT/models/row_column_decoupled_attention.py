@@ -25,6 +25,7 @@ from torch.nn import grad  # noqa: F401
 from torch._jit_internal import boolean_dispatch, List, Optional, _overload
 
 import ENACT
+from .enact import ClustAttn
 
 Tensor = torch.Tensor
 
@@ -58,18 +59,17 @@ class ATTNFunction(torch.autograd.Function):
     @once_differentiable
     def backward(ctx, grad_output):
 
-        q_row, q_col, k_row, k_col, v, attn_w, attn_w_col, attn_w_row = ctx.saved_tensors
+        q_row, q_col, k_row, k_col, v, attn_w_col, attn_w_row, attn_w = ctx.saved_tensors
         start_indices = ctx.start_indices
         cl_sizes = ctx.cl_sizes
 
         nh_bs = grad_output.shape[0]
-        H = q_row.shape[2]
-        W = q_col.shape[2]
-        feature_dims = v.shape[1]
+        H = q_row.shape[1]
+        W = q_col.shape[1]
 
         #grad_output = grad_output.view(batch_size, H, W, num_heads, feature_dims).permute(3,0,1,2,4).flatten(0,1).flatten(1,2)
         grad_attn_w, grad_v = ENACT.backward_rcda_map(grad_output, attn_w, v, start_indices, cl_sizes, nh_bs)
-        grad_attn_w = grad_attn_w.view(H,W,feature_dims)
+        grad_attn_w = grad_attn_w.view(H,W,attn_w.shape[-1])
 
         grad_attn_w_row = torch.sum(grad_attn_w*attn_w_col, dim=1, keepdim=True).squeeze(1)
         grad_attn_w_col = torch.sum(grad_attn_w*attn_w_row, dim=0, keepdim=True).squeeze(0)
@@ -79,7 +79,7 @@ class ATTNFunction(torch.autograd.Function):
         grad_q_row, grad_k_row = ENACT.backward_rcda_w(grad_attn_w_row, attn_w_row, q_row, k_row, start_indices, cl_sizes)
         grad_q_col, grad_k_col = ENACT.backward_rcda_w(grad_attn_w_col, attn_w_col, q_col, k_col, start_indices, cl_sizes)
 
-        return grad_q_row, grad_q_col, grad_k_row, grad_k_col, grad_v
+        return grad_q_row, grad_q_col, grad_k_row, grad_k_col, grad_v, None, None, None, None
 
 def multi_head_rcda_forward_dec(query_row,  # type: Tensor
                             query_col,  # type: Tensor
@@ -302,13 +302,15 @@ def multi_head_rcda_forward_dec(query_row,  # type: Tensor
     else:
         return attn_output, None
 
-def multi_head_rcda_forward_enc(key_row,  # type: Tensor
-                            key_col,  # type: Tensor
-                            query_row,  # type: Tensor
+def multi_head_rcda_forward_enc(query_row,  # type: Tensor
                             query_col,  # type: Tensor
+                            key_row,  # type: Tensor
+                            key_col,  # type: Tensor
                             value,  # type: Tensor
                             embed_dim_to_check,  # type: int
                             num_heads,  # type: int
+                            sigma, #type: float
+                            device, #type: int
                             in_proj_weight,  # type: Tensor
                             in_proj_bias,  # type: Tensor
                             bias_k_row,  # type: Optional[Tensor]
@@ -441,101 +443,32 @@ def multi_head_rcda_forward_enc(key_row,  # type: Tensor
         _b = _b[_start:]
     v = linear(value, _w, _b)
 
-    k_row = k_row.transpose(0, 1)
-    k_col = k_col.transpose(0, 1)
     q_row = q_row.mean(1).transpose(0, 1)
     q_col = q_col.mean(2).transpose(0, 1)
 
     k_row = k_row * scaling
     k_col = k_col * scaling
-
-
-    k_row = k_row.contiguous().view(tgt_len, bsz * num_heads, head_dim).transpose(0, 1)
-    k_col = k_col.contiguous().view(tgt_len, bsz * num_heads, head_dim).transpose(0, 1)
+    
+    clst = ClustAttn(sigma, embed_dim, num_heads, device).to(device)
+    v = v.flatten(1,2)
+    k_row, k_col, v, st_inds, reg_ls = clst(k_row, k_col, v)
+    
+    k_row = k_row.contiguous().view(-1, num_heads, head_dim).permute(1, 0, 2).flatten(0,1)
+    k_col = k_col.contiguous().view(-1, num_heads, head_dim).permute(1, 0, 2).flatten(0,1)
+    if v is not None:
+        v = v.view(-1, num_heads, head_dim).permute(1, 0, 2).flatten(0,1)
 
     if k_row is not None:
         q_row = q_row.contiguous().view(-1, bsz * num_heads, head_dim).transpose(0, 1)
     if k_col is not None:
         q_col = q_col.contiguous().view(-1, bsz * num_heads, head_dim).transpose(0, 1)
-    if v is not None:
-        v = v.contiguous().permute(1,0,2).reshape(tgt_len, bsz*num_heads, head_dim).permute(1,0,2)
-
-
-    # FROM HERE
-    #DO CLUSTERING HERE FIRST
-    attn_output_weights_row = torch.bmm(q_row, k_row.transpose(1, 2))
-    attn_output_weights_col = torch.bmm(q_col, k_col.transpose(1, 2))
-    assert list(attn_output_weights_row.size()) == [bsz * num_heads, src_len_row, tgt_len]
-    assert list(attn_output_weights_col.size()) == [bsz * num_heads, src_len_col, tgt_len]
-
-    """
-    if key_padding_mask is not None:
-        mask_row=key_padding_mask[:,0,:].unsqueeze(1).unsqueeze(2)
-        mask_col=key_padding_mask[:,:,0].unsqueeze(1).unsqueeze(2)
-
-        print(mask_row.shape)
-        print(mask_col.shape)
-
-        attn_output_weights_row = attn_output_weights_row.view(bsz, num_heads, src_len_row, tgt_len)
-        attn_output_weights_col = attn_output_weights_col.view(bsz, num_heads, src_len_col, tgt_len)
-
-        attn_output_weights_row = attn_output_weights_row.masked_fill(mask_row,float('-inf'))
-        attn_output_weights_col = attn_output_weights_col.masked_fill(mask_col, float('-inf'))
-
-        attn_output_weights_row = attn_output_weights_row.view(bsz * num_heads, src_len_row, tgt_len)
-        attn_output_weights_col = attn_output_weights_col.view(bsz * num_heads, src_len_col, tgt_len)
-    """
-
-    attn_output_weights_col = softmax(attn_output_weights_col, dim=-1)
-    attn_output_weights_row = softmax(attn_output_weights_row, dim=-1)
-    # TO HERE
-    attn_output_weights_col = dropout(attn_output_weights_col, p=dropout_p, training=training)
-    attn_output_weights_row = dropout(attn_output_weights_row, p=dropout_p, training=training)
-
-    efficient_compute=True
-    attn_output_weights_col = attn_output_weights_col.unsqueeze(2)
-    attn_output_weights_row = attn_output_weights_row.unsqueeze(1)
-    attn_output_weights = attn_output_weights_col*attn_output_weights_row
-    attn_output = torch.matmul(attn_output_weights, v.unsqueeze(1)).view(bsz, num_heads, src_len_col, src_len_row, head_dim).permute(0,2,3,1,4).flatten(3,4)
-    # This config will not affect the performance.
-    # It will compute the short edge first which can save the memory and run slightly faster but both of them should get the same results.
-    # You can also set it "False" if your graph needs to be always the same.
-    """
-    if efficient_compute:
-        print(v.shape)
-        print(attn_output_weights_row.shape)
-        print(attn_output_weights_col.shape)
-        if src_len_col<src_len_row:
-            b_ein,q_ein,w_ein = attn_output_weights_row.shape
-            b_ein,cl_spat,c_ein = v.shape
-            attn_output_row = torch.matmul(attn_output_weights_row,v).reshape(b_ein,q_ein,h_ein,c_ein).permute(0,2,1,3)
-            attn_output = torch.matmul(attn_output_weights_col.permute(1,0,2)[:,:,None,:],attn_output_row.permute(2,0,1,3)).squeeze(-2).reshape(tgt_len,bsz,embed_dim)
-            ### the following code base on einsum get the same results
-            # attn_output_row = torch.einsum("bqw,bhwc->bhqc",attn_output_weights_row,v)
-            # attn_output = torch.einsum("bqh,bhqc->qbc",attn_output_weights_col,attn_output_row).reshape(tgt_len,bsz,embed_dim)
-        else:
-            b_ein,q_ein,h_ein=attn_output_weights_col.shape
-            b_ein,h_ein,w_ein,c_ein = v.shape
-            attn_output_col = torch.matmul(attn_output_weights_col,v.reshape(b_ein,h_ein,w_ein*c_ein)).reshape(b_ein,q_ein,w_ein,c_ein)
-            attn_output = torch.matmul(attn_output_weights_row[:,:,None,:],attn_output_col).squeeze(-2).permute(1,0,2).reshape(tgt_len, bsz, embed_dim)
-            ### the following code base on einsum get the same results
-            # attn_output_col = torch.einsum("bqh,bhwc->bqwc", attn_output_weights_col, v)
-            # attn_output = torch.einsum("bqw,bqwc->qbc", attn_output_weights_row, attn_output_col).reshape(tgt_len, bsz,embed_dim)
-    else:
-        b_ein, q_ein, h_ein = attn_output_weights_col.shape
-        b_ein, h_ein, w_ein, c_ein = v.shape
-        attn_output_col = torch.matmul(attn_output_weights_col, v.reshape(b_ein, h_ein, w_ein * c_ein)).reshape(b_ein, q_ein, w_ein, c_ein)
-        attn_output = torch.matmul(attn_output_weights_row[:, :, None, :], attn_output_col).squeeze(-2).permute(1, 0, 2).reshape(tgt_len, bsz, embed_dim)
-        ### the following code base on einsum get the same results
-        # attn_output_col = torch.einsum("bqh,bhwc->bqwc", attn_output_weights_col, v)
-        # attn_output = torch.einsum("bqw,bqwc->qbc", attn_output_weights_row, attn_output_col).reshape(tgt_len, bsz,embed_dim)
-    """
+    
+    attn_output = ATTNFunction.apply(q_row, q_col, k_row, k_col, v, st_inds, reg_ls, dropout_p, training)
+    attn_output = attn_output.view(num_heads, bsz, src_len_col, src_len_row, head_dim).permute(1,2,3,0,4).flatten(3,4)
+    
     attn_output = linear(attn_output, out_proj_weight, out_proj_bias)
-
-    if need_weights:
-        return attn_output,torch.einsum("bqw,bqh->qbhw",attn_output_weights_row,attn_output_weights_col).reshape(tgt_len,bsz,num_heads,src_len_col,src_len_row).mean(2)
-    else:
-        return attn_output, None
+    
+    return attn_output, None
 
 
 
@@ -645,7 +578,7 @@ class MultiheadRCDA(Module):
 
         super(MultiheadRCDA, self).__setstate__(state)
 
-    def forward(self, query_row, query_col, key_row, key_col, value, loc,
+    def forward(self, query_row, query_col, key_row, key_col, value, sigma, device, loc,
                 key_padding_mask=None, need_weights=False, attn_mask=None):
         ## type: (Tensor, Tensor, Tensor, Tensor, Tensor, Optional[Tensor], bool, Optional[Tensor]) -> Tuple[Tensor, Optional[Tensor]]
         r"""
@@ -687,6 +620,7 @@ class MultiheadRCDA(Module):
             if loc=='enc':
                 return multi_head_rcda_forward_enc(
                     query_row,query_col, key_row, key_col, value, self.embed_dim, self.num_heads,
+                    sigma, device,
                     self.in_proj_weight, self.in_proj_bias,
                     self.bias_k_row,self.bias_k_col, self.bias_v, self.add_zero_attn,
                     self.dropout, self.out_proj.weight, self.out_proj.bias,
@@ -712,6 +646,7 @@ class MultiheadRCDA(Module):
             if loc=='enc':
                 return multi_head_rcda_forward_enc(
                     query_row,query_col, key_row,key_col, value, self.embed_dim, self.num_heads,
+                    sigma, device,
                     self.in_proj_weight, self.in_proj_bias,
                     self.bias_k_row,self.bias_k_col, self.bias_v, self.add_zero_attn,
                     self.dropout, self.out_proj.weight, self.out_proj.bias,

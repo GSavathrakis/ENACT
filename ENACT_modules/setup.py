@@ -6,7 +6,7 @@ setup(
     ext_modules=[
         CUDAExtension(
             name='ENACT',
-            sources=['clust/cluster_functions.cu', 'attn_module/ops/ops.cu', 'attn_module/attention.cu', 'bindings_py.cpp'],
+            sources=['clust/cluster_functions.cu', 'attn_module/ops/ops.cu', 'attn_module/attention.cu', 'attn_module/RCDA_attention.cu', 'bindings_py.cpp'],
             extra_compile_args={'cxx': ['-O3'], 'nvcc': ['-O3']},
         ),
     ],

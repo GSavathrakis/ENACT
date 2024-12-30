@@ -201,7 +201,7 @@ vector<torch::Tensor> enact_cluster_backward_rcda(torch::Tensor grad_Keys_rows_c
 
     dim3 numBlocks(n_blocks_reg, n_blocks_ft);
     dim3 threadsPerBlock(n_threads_reg, n_threads_ft);
-    grad_clustering<<<numBlocks, threadsPerBlock>>>(grad_Keys_rows_cl.data_ptr<float>(), grad_Keys_cols_cl.data_ptr<float>(), grad_Values_cl.data_ptr<float>(), Keys_rows.data_ptr<float>(), Keys_cols.data_ptr<float>(), Values.data_ptr<float>(), Entropy.data_ptr<float>(), Entropy_step.data_ptr<int>(), start_inds.data_ptr<int>(), region_lengths.data_ptr<int>(), region_lengths.size(0), Keys_rows.size(1), grad_Keys_rows.data_ptr<float>(), grad_Keys_cols.data_ptr<float>(), grad_Values.data_ptr<float>(), grad_entropy.data_ptr<float>());
+    grad_clustering_rcda<<<numBlocks, threadsPerBlock>>>(grad_Keys_rows_cl.data_ptr<float>(), grad_Keys_cols_cl.data_ptr<float>(), grad_Values_cl.data_ptr<float>(), Keys_rows.data_ptr<float>(), Keys_cols.data_ptr<float>(), Values.data_ptr<float>(), Entropy.data_ptr<float>(), Entropy_step.data_ptr<int>(), start_inds.data_ptr<int>(), region_lengths.data_ptr<int>(), region_lengths.size(0), Keys_rows.size(1), grad_Keys_rows.data_ptr<float>(), grad_Keys_cols.data_ptr<float>(), grad_Values.data_ptr<float>(), grad_entropy.data_ptr<float>());
 
     return{
         grad_Keys_rows, grad_Keys_cols, grad_Values, grad_entropy
