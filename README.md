@@ -33,9 +33,9 @@ We provide comparisons in GPU memory usage, training and inference times (in sec
       <td>R50</td>
       <td>300</td>
       <td>8</td>
-      <td>23.5</td>
-      <td>0.0488</td>
-      <td>0.0472</td>
+      <td>19.7</td>
+      <td>0.0693</td>
+      <td>0.0538</td>
     </tr>
     <tr>
       <td>Conditional DETR-C5</td>
@@ -51,9 +51,9 @@ We provide comparisons in GPU memory usage, training and inference times (in sec
       <td>R101</td>
       <td>50</td>
       <td>8</td>
-      <td>36.7</td>
-      <td>0.0779</td>
-      <td>0.0605</td>
+      <td>37.3</td>
+      <td>0.0930</td>
+      <td>0.0693</td>
     </tr>
     <tr>
       <td>Anchor DETR-DC5</td>
@@ -69,9 +69,9 @@ We provide comparisons in GPU memory usage, training and inference times (in sec
       <td>R50</td>
       <td>50</td>
       <td>4</td>
-      <td>17.7</td>
-      <td>0.0845</td>
-      <td>0.0608</td>
+      <td>25.1</td>
+      <td>0.1170</td>
+      <td>0.0779</td>
     </tr>
   </tbody>
 </table>
@@ -100,12 +100,12 @@ All experiments were done using the COCO 2017 train118k set for training, and va
     </tr>
     <tr>
       <td>DETR-C5 + ENACT</td>
-      <td>39.0</td>
-      <td>59.1</td>
-      <td>18.3</td>
-      <td>42.2</td>
-      <td>57.0</td>
-      <td><a href="https://drive.google.com/file/d/1SSPlsywBkV5qUk4h4K0gstD8kgJldvaN/view?usp=drive_link">model</a>&nbsp;|&nbsp;<a href="https://drive.google.com/file/d/1sTyChBg0PA-Blf1upRdQ9rkSRemgf530/view?usp=drive_link">log</a></td>
+      <td>40.1</td>
+      <td>60.5</td>
+      <td>19.4</td>
+      <td>43.5</td>
+      <td>58.2</td>
+      <td><a href="https://drive.google.com/file/d/1I8gEdqGLo09Lyo5xqq_JNmahvlXofCIG/view?usp=drive_link">model</a>&nbsp;|&nbsp;<a href="https://drive.google.com/file/d/1O7PEFpE6-0Hmm8BvcBzAYVO0NITxb3ls/view?usp=drive_link">log</a></td>
     </tr>
     <tr>
       <td>Conditional DETR-C5</td>
@@ -119,11 +119,11 @@ All experiments were done using the COCO 2017 train118k set for training, and va
     <tr>
       <td>Conditional DETR-C5 + ENACT</td>
       <td>41.5</td>
-      <td>62.2</td>
-      <td>21.3</td>
-      <td>45.5</td>
-      <td>59.3</td>
-      <td><a href="https://drive.google.com/file/d/1_RyhT_xn9TqqJy1-4mb39KUexjJrMV_d/view?usp=drive_link">model</a>&nbsp;|&nbsp;<a href="https://drive.google.com/file/d/1OLhlMNd2k7g9lIb7mbWg82gkdeykAG6E/view?usp=drive_link">log</a></td>
+      <td>62.6</td>
+      <td>21.9</td>
+      <td>45.3</td>
+      <td>59.2</td>
+      <td><a href="https://drive.google.com/file/d/1-PO2raZ9Mvgu5fErfbGfNVN71CUVixQU/view?usp=drive_link">model</a>&nbsp;|&nbsp;<a href="https://drive.google.com/file/d/1bJNvJtMNimWa-w3drmCGA5Hmyx7ViFmh/view?usp=drive_link">log</a></td>
     </tr>
     <tr>
       <td>Anchor DETR-DC5</td>
@@ -137,11 +137,11 @@ All experiments were done using the COCO 2017 train118k set for training, and va
     <tr>
       <td>Anchor DETR-DC5 + ENACT</td>
       <td>42.9</td>
-      <td>63.5</td>
-      <td>25.0</td>
-      <td>46.8</td>
+      <td>63.4</td>
+      <td>24.6</td>
+      <td>46.9</td>
       <td>58.5</td>
-      <td><a href="https://drive.google.com/file/d/1CLWJl49gE8vCdBbCAMHrcgzeiK6JKiza/view?usp=drive_link">model</a>&nbsp;|&nbsp;<a href="https://drive.google.com/file/d/1arBV_A-HCi_lXlUxNGNAGOhKIxjs_D1Z/view?usp=drive_link">log</a></td>
+      <td><a href="https://drive.google.com/file/d/1KTOzBAgRp0ERZ9zOgtsQyE4sGgvh6dmZ/view?usp=drive_link">model</a>&nbsp;|&nbsp;<a href="https://drive.google.com/file/d/1t58AprdXOLFNEAMo3LaaiGk8o8hSHm3u/view?usp=drive_link">log</a></td>
     </tr>
   </tbody>
 </table>

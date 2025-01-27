@@ -88,9 +88,6 @@ class ClustAttn(nn.Module):
         q = q.view(bs, spat, self.n_heads, feats//self.n_heads).permute(2, 0, 1, 3).flatten(0,1)
         k_cl = k_cl.view(-1, self.n_heads, feats//self.n_heads).permute(1, 0, 2).flatten(0,1)
         v_cl = v_cl.view(-1, self.n_heads, feats//self.n_heads).permute(1, 0, 2).flatten(0,1)
-
-        #start_indices = torch.from_numpy(start_inds).to(self.device).to(torch.int)
-        #region_lengths = torch.from_numpy(reg_ls).to(self.device).to(torch.int)
             
         attention = ATTNFunction.apply(q, k_cl, v_cl, start_indices, region_lengths)
 

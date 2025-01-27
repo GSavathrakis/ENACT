@@ -92,55 +92,5 @@ class ClustAttn(nn.Module):
         start_indices = copy.deepcopy(torch.cumsum(region_lengths, 0))
         start_indices = torch.cat((torch.tensor([0]).to(self.device), start_indices))#start_inds.insert(0,0)
         start_indices = start_indices[:-1].to(torch.int)
-        """
-
-        prob_k_row = F.softmax(self.W_prob(k_row).squeeze(-1), -1) + 1e-8
-
-        entropy_row = -prob_k_row*torch.log(prob_k_row)/torch.log(self.base.to(self.device))
-        entropy_row = F.conv1d(entropy_row.unsqueeze(1), self.gaussian_kernel.to(self.device).unsqueeze(0).unsqueeze(0), padding='same').squeeze(1)
-        
-        entropy_step_row = F.conv1d(entropy_row.unsqueeze(1), self.Sobel_2der.to(self.device).unsqueeze(0).unsqueeze(0), padding='same').squeeze(1)
-        entropy_step_row = STEFunction.apply(entropy_step_row)
-
-        prob_k_col = F.softmax(self.W_prob(k_col).squeeze(-1), -1) + 1e-8
-
-        entropy_col = -prob_k_col*torch.log(prob_k_col)/torch.log(self.base.to(self.device))
-        entropy_col = F.conv1d(entropy_col.unsqueeze(1), self.gaussian_kernel.to(self.device).unsqueeze(0).unsqueeze(0), padding='same').squeeze(1)
-        
-        entropy_step_col = F.conv1d(entropy_col.unsqueeze(1), self.Sobel_2der.to(self.device).unsqueeze(0).unsqueeze(0), padding='same').squeeze(1)
-        entropy_step_col = STEFunction.apply(entropy_step_col)
-
-        means = (~torch.logical_xor(entropy_step_row, entropy_step_col)).type(torch.float64)
-        print(means.mean(-1))
-        #print(entropy_step)
-
-        entropy_step = entropy_step_row
-        entropy = entropy_row
-        
-
-        means = []
-        stds = []
-        for b in range(bs):
-            boundaries = torch.diff(entropy_step[b].type(torch.int64), prepend=~entropy_step[b][:1].type(torch.int64), append=~entropy_step[b][-1:].type(torch.int64))
-            region_lengths = torch.diff(torch.nonzero(boundaries).squeeze())
-            mean_region_length = region_lengths.float().mean()
-            std_region_length = region_lengths.float().std()
-            means.append(mean_region_length.item())
-            stds.append(std_region_length.item())
-        
-        clst_sh = round(np.mean(means))
-        k_row = k_row[:,(spat%clst_sh)//2:spat-(spat%clst_sh - (spat%clst_sh)//2),:]
-        k_col = k_col[:,(spat%clst_sh)//2:spat-(spat%clst_sh - (spat%clst_sh)//2),:]
-        v = v[:,(spat%clst_sh)//2:spat-(spat%clst_sh - (spat%clst_sh)//2),:]
-        k_row = k_row.view(bs, k_row.shape[1]//clst_sh, clst_sh, feats)
-        k_col = k_col.view(bs, k_col.shape[1]//clst_sh, clst_sh, feats)
-        v = v.view(bs, v.shape[1]//clst_sh, clst_sh, feats)
-        entropy = entropy[:, (spat%clst_sh)//2:spat-(spat%clst_sh - (spat%clst_sh)//2)]
-        entropy_step = entropy_step[:, (spat%clst_sh)//2:spat-(spat%clst_sh - (spat%clst_sh)//2)]
-        entropy = F.softmax(entropy.view(bs, entropy.shape[1]//clst_sh, clst_sh), -1).unsqueeze(-1)
-        k_row = (entropy*k_row).sum(-2)
-        k_col = (entropy*k_col).sum(-2)
-        v = (entropy*v).sum(-2)
-        """
 
         return k_row_cl, k_col_cl, v_cl, start_indices, region_lengths
