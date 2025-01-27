@@ -1,4 +1,5 @@
 #include "ops.h"
+#include <float.h>
 #include <cmath>
 
 __global__ void attention_weights(const float* queries, const float* keys, const int n_heads_bs, const int spat1, const int* start_inds, const int* sizes, const int spat2, const int feature_dims, float* attn_w){

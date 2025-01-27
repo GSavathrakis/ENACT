@@ -12,10 +12,17 @@ import matplotlib.pyplot as plt
 class ClustAttn(nn.Module):
     def __init__(self, sigma, d_model, n_heads, device):
         super().__init__()
+        self.device=device
 
-        self.gaussian_kernel = (1./(sigma*torch.sqrt(torch.Tensor([2*np.pi]))))*torch.exp(-torch.pow(torch.arange(-(3*sigma-1),3*sigma), 2)/(2*torch.pow(torch.Tensor([sigma]),2)))
-        self.Sobel_2der = torch.Tensor([-1., 2., -1.])
-        self.base = torch.Tensor([2])
+        gaussian_kernel = (1./(sigma*torch.sqrt(torch.Tensor([2*np.pi]))))*torch.exp(-torch.pow(torch.arange(-(3*sigma-1),3*sigma), 2)/(2*torch.pow(torch.Tensor([sigma]),2)))
+        Sobel_2der = torch.Tensor([-1., 2., -1.])
+        base = torch.Tensor([2])
+        zer = torch.Tensor([0])
+
+        self.register_buffer('gaussian_kernel', gaussian_kernel)
+        self.register_buffer('Sobel_2der', Sobel_2der)
+        self.register_buffer('base', base)
+        self.register_buffer('zer', zer)
         
         self.W_q = nn.Linear(d_model, d_model)
         self.W_k = nn.Linear(d_model, d_model)
@@ -42,21 +49,20 @@ class ClustAttn(nn.Module):
 
         entropy = F.softmax(self.W_prob(k).squeeze(-1), -1) + 1e-8
 
-        entropy = -entropy*torch.log(entropy)/torch.log(self.base.to(self.device))
-        entropy = F.conv1d(entropy.unsqueeze(1), self.gaussian_kernel.to(self.device).unsqueeze(0).unsqueeze(0), padding='same').squeeze(1)
+        entropy = -entropy*torch.log(entropy)/torch.log(self.base)
+        entropy = F.conv1d(entropy.unsqueeze(1), self.gaussian_kernel.unsqueeze(0).unsqueeze(0), padding='same').squeeze(1)
         
-        entropy_step = F.conv1d(entropy.unsqueeze(1), self.Sobel_2der.to(self.device).unsqueeze(0).unsqueeze(0), padding='same').squeeze(1)
-        entropy_step = (entropy_step > 0).to(torch.float)
-        entropy_step = (entropy_step*2-1).to(torch.int)
+        entropy_step = F.conv1d(entropy.unsqueeze(1), self.Sobel_2der.unsqueeze(0).unsqueeze(0), padding='same').squeeze(1)
+        entropy_step = ((entropy_step > 0).to(torch.int))*2-1
+        #entropy_step = (entropy_step*2-1).to(torch.int)
 
         entropy_step = entropy_step.flatten(0,1)
         entropy = entropy.flatten(0,1)
         k = k.flatten(0,1)
         v = v.flatten(0,1)
 
-        start_indices = torch.sign(entropy_step)  # Convert elements to +1 or -1 based on their sign
-        start_indices = start_indices[1:] != start_indices[:-1]  # Identify where sign changes
-        start_indices = torch.cat((torch.tensor([0]).to(self.device), torch.nonzero(start_indices, as_tuple=True)[0] + 1))
+        start_indices = entropy_step[1:] != entropy_step[:-1]  # Identify where sign changes
+        start_indices = torch.cat((self.zer, torch.nonzero(start_indices, as_tuple=True)[0] + 1))
         start_indices = torch.unique(torch.sort(torch.cat(((torch.Tensor([spat]*(bs-1))*torch.linspace(1,bs-1,bs-1)).to(self.device), start_indices)))[0])
         region_lengths = torch.diff(torch.cat((start_indices, torch.tensor([entropy_step.size(0)]).to(self.device))))
         
@@ -68,11 +74,11 @@ class ClustAttn(nn.Module):
 
         region_lengths = torch.cumsum(region_lengths, dim=0)
         region_lengths = torch.where(region_lengths%spat==0)
-        region_lengths = torch.diff(torch.cat((torch.tensor([0]).to('cuda'), region_lengths[0]+1)))
+        region_lengths = torch.diff(torch.cat((self.zer, region_lengths[0]+1)))
 
         region_lengths = region_lengths.repeat(self.n_heads).to(torch.int)
         start_indices = copy.deepcopy(torch.cumsum(region_lengths, 0))
-        start_indices = torch.cat((torch.tensor([0]).to(self.device), start_indices))#start_inds.insert(0,0)
+        start_indices = torch.cat((self.zer, start_indices))#start_inds.insert(0,0)
         start_indices = start_indices[:-1].to(torch.int)
 
         q = self.W_q(q)
@@ -82,14 +88,14 @@ class ClustAttn(nn.Module):
         q = q.view(bs, spat, self.n_heads, feats//self.n_heads).permute(2, 0, 1, 3).flatten(0,1)
         k_cl = k_cl.view(-1, self.n_heads, feats//self.n_heads).permute(1, 0, 2).flatten(0,1)
         v_cl = v_cl.view(-1, self.n_heads, feats//self.n_heads).permute(1, 0, 2).flatten(0,1)
+
+        #start_indices = torch.from_numpy(start_inds).to(self.device).to(torch.int)
+        #region_lengths = torch.from_numpy(reg_ls).to(self.device).to(torch.int)
             
         attention = ATTNFunction.apply(q, k_cl, v_cl, start_indices, region_lengths)
 
-        attention = attention.view(self.n_heads, bs, spat, feats//self.n_heads)
-        attention = attention.permute(1,2,0,3)
-        attention = attention.flatten(2,3)
-        attention = attention.permute(1,0,2)
-        attention = self.W_o(attention)
+        attention = attention.view(self.n_heads, bs, spat, feats//self.n_heads).permute(1,2,0,3).flatten(2,3)
+        attention = self.W_o(attention).permute(1,0,2)
 
         return attention
     

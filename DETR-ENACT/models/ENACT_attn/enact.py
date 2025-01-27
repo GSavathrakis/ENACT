@@ -46,16 +46,16 @@ class ClustAttn(nn.Module):
         entropy = F.conv1d(entropy.unsqueeze(1), self.gaussian_kernel.to(self.device).unsqueeze(0).unsqueeze(0), padding='same').squeeze(1)
         
         entropy_step = F.conv1d(entropy.unsqueeze(1), self.Sobel_2der.to(self.device).unsqueeze(0).unsqueeze(0), padding='same').squeeze(1)
-        entropy_step = (entropy_step > 0).to(torch.float)
-        entropy_step = (entropy_step*2-1).to(torch.int)
+        entropy_step = ((entropy_step > 0).to(torch.int))*2-1
+        #entropy_step = (entropy_step*2-1).to(torch.int)
 
         entropy_step = entropy_step.flatten(0,1)
         entropy = entropy.flatten(0,1)
         k = k.flatten(0,1)
         v = v.flatten(0,1)
 
-        start_indices = torch.sign(entropy_step)  # Convert elements to +1 or -1 based on their sign
-        start_indices = start_indices[1:] != start_indices[:-1]  # Identify where sign changes
+        
+        start_indices = entropy_step[1:] != entropy_step[:-1]  # Identify where sign changes
         start_indices = torch.cat((torch.tensor([0]).to(self.device), torch.nonzero(start_indices, as_tuple=True)[0] + 1))
         start_indices = torch.unique(torch.sort(torch.cat(((torch.Tensor([spat]*(bs-1))*torch.linspace(1,bs-1,bs-1)).to(self.device), start_indices)))[0])
         region_lengths = torch.diff(torch.cat((start_indices, torch.tensor([entropy_step.size(0)]).to(self.device))))
